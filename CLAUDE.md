@@ -48,6 +48,9 @@ Arrow tables are used as the interchange format between DuckDB and lonboard (zer
 - Explore CARTO cartocolors continuous colormaps (web service API)
 - Use `morecantile` (https://github.com/developmentseed/morecantile) for tile-based memory management with DuckDB + xarray
 - Consider lonboard raster layer or National Map tool for coverage visualization
+- Investigate Development Seed's async GeoTIFF reader (includes COG support) for async tile loading
+- Future: async or concurrent.futures for parallel tile processing in `process_all_tiles`
+- Keep lonboard map construction outside pipeline functions (interactive, not pipeline logic)
 
 ## Git Workflow
 
