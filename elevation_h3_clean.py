@@ -14,6 +14,7 @@
 #     "pyarrow==18.1.0",
 #     "pyproj==3.7.2",
 #     "pystac-client==0.9.0",
+#     "sqlglot",
 # ]
 # ///
 
@@ -237,7 +238,7 @@ def _(calculate_resolution_for_h3):
     # Mount Washington, NH — dramatic terrain, reasonable size
     bbox = [-71.502182, 44.092909, -70.723358, 44.511611]
 
-    # Grand Canyon (large — expect ~1M+ hexes at res 11, may take several minutes)
+    # Grand Canyon (large — expect ~5M+ hexes at res 11, may take several minutes)
     # bbox = [-113.0606, 35.8461, -111.7165, 36.7665]
 
     # Cairo, IL (Mississippi/Ohio confluence)
@@ -314,10 +315,10 @@ def _(
         value="LaJolla (reversed)",
         label="Colormap",
     )
-    elevation_scale_slider = mo.ui.slider(
+    elevation_scale_slider = mo.ui.number(
         start=0.1, stop=20.0, step=0.1, value=3.4, label="Elevation Scale"
     )
-    opacity_slider = mo.ui.slider(
+    opacity_slider = mo.ui.number(
         start=0.0, stop=1.0, step=0.05, value=0.9, label="Opacity"
     )
     extruded_toggle = mo.ui.switch(value=True, label="Extruded")
