@@ -3,7 +3,8 @@
 Visualize USGS 3DEP seamless elevation data as extruded H3 hexagons using DuckDB, lonboard, and Marimo notebooks.
 
 **Status: Active development**
-
+- *Be extremeley careful of size of bbox vs. H3 resolution if you want to try this.*
+* I am working on adding safeguards 
 ## What It Does
 
 Queries 10m DEM rasters from the [USGS 3DEP Seamless](https://www.usgs.gov/3d-elevation-program) dataset via [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/), aggregates pixel elevations into H3 hexagons using DuckDB's H3 extension, and renders interactive 3D extruded hex maps with [lonboard](https://github.com/developmentseed/lonboard).
