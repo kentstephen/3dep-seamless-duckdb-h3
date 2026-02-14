@@ -3,7 +3,7 @@
 Visualize USGS 3DEP seamless elevation data as extruded H3 hexagons using DuckDB, lonboard, and Marimo notebooks.
 
 **Status: Active development**
-- *Be extremeley careful of size of bbox vs. H3 resolution if you want to try this.*
+*Be extremeley careful of size of bbox vs. H3 resolution if you want to try this.*
 * I am working on adding safeguards 
 ## What It Does
 
