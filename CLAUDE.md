@@ -43,6 +43,26 @@ Arrow tables are used as the interchange format between DuckDB and lonboard (zer
 
 ## Project Goals & TODOs
 
+### River REMs (Relative Elevation Models)
+- **Goal**: Programmatic floodplain visualization — detrend a DEM relative to the river water surface so values represent height above river level
+- **HyRiver approach** (preferred): Use `pynhd` to get NHDPlus flowlines (authoritative USGS data via NLDI/WaterData), then IDW-interpolate river surface elevation across the DEM, subtract to get REM. HyRiver has a documented REM recipe: https://docs.hyriver.io/examples/notebooks/rem.html
+  - `pynhd.NLDI().navigate_byid()` — get upstream/downstream flowlines from a USGS gage
+  - `pynhd.WaterData("nhdflowline_network").bybox()` — flowlines by bounding box
+  - `pynhd.prepare_nhdplus()` + filter by `levelpathi` for main stem
+  - `pygeoutils.smooth_linestring()` — smooth jagged NHD geometries before sampling
+  - `scipy.spatial.KDTree` + IDW (k=200, 1/d^2) to interpolate river surface elevation
+  - `seamless-3dep` is the new lightweight replacement for `py3dep` (thread-safe connection pooling, downloads to disk as GeoTIFFs)
+- **RiverREM** (alternative): OpenTopography's automated tool (https://github.com/OpenTopography/RiverREM) — fully automated but uses OSM for centerlines instead of NHDPlus. `pip install riverrem`, then `REMMaker(dem=path).make_rem()`
+- **Integration**: After computing REM, aggregate *relative* elevation to H3 with existing DuckDB pipeline — REM values per hex make excellent floodplain visualizations
+- **Deps to add**: `pynhd`, `pygeoutils`, `scipy`, `opt-einsum` (for efficient IDW weight computation)
+
+### Pre-Run Hex Count Estimation
+- Before running the full pipeline, estimate the number of H3 hexagons that will be produced from a given bbox + H3 resolution as a safety check
+- Use `h3.average_hexagon_area()` to compute: `estimated_hexes = bbox_area_km2 / h3.average_hexagon_area(h3_res, unit='km^2')`
+- Warn if estimated count exceeds a threshold (e.g., 50M hexes) — at that scale memory pressure is real (both Arrow table and lonboard rendering)
+- Could also estimate from tile count: `num_tiles * avg_hexes_per_tile` based on a calibration run
+
+### Pipeline & Infra
 - Use `obstore` with Planetary Computer auth (https://developmentseed.org/obstore/latest/api/auth/planetary-computer/) alongside pystac
 - WhiteboxTools (pywbt) flow accumulation on DEM is a future TODO
 - Explore CARTO cartocolors continuous colormaps (web service API)
