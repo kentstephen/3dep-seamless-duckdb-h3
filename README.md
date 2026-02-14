@@ -3,8 +3,10 @@
 Visualize USGS 3DEP seamless elevation data as extruded H3 hexagons using DuckDB, lonboard, and Marimo notebooks.
 
 **Status: Active development**
-*Be extremeley careful of size of bbox vs. H3 resolution if you want to try this.*
-* I am working on adding safeguards 
+
+> [!WARNING]
+> Be extremely careful with bbox size vs. H3 resolution if you want to try this. Large areas at high resolution can produce 50M+ hexagons. I am working on adding safeguards.
+
 ## What It Does
 
 Queries 10m DEM rasters from the [USGS 3DEP Seamless](https://www.usgs.gov/3d-elevation-program) dataset via [Microsoft Planetary Computer](https://planetarycomputer.microsoft.com/), aggregates pixel elevations into H3 hexagons using DuckDB's H3 extension, and renders interactive 3D extruded hex maps with [lonboard](https://github.com/developmentseed/lonboard).
@@ -24,6 +26,7 @@ STAC Query (Planetary Computer)
 - **Resolution-aware COG reads** — automatically calculates pixel resolution to match H3 hex size, leveraging COG internal overviews for less I/O
 - **Zero-copy Arrow interchange** — DuckDB outputs Arrow tables consumed directly by lonboard via `arro3`
 - **DuckDB H3 extension** — all spatial binning happens in SQL (`h3_latlng_to_cell_string`, `GROUP BY`, `AVG`)
+- **Fullscreen map control** — lonboard map includes a fullscreen toggle for immersive 3D exploration
 
 ## Running
 
