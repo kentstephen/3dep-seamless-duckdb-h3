@@ -29,7 +29,7 @@ STAC Query (Planetary Computer)
 Requires [uv](https://docs.astral.sh/uv/). Notebooks use PEP 723 inline script metadata so dependencies are self-contained:
 
 ```bash
-uv run marimo edit elevation_h3.py --sandbox
+uv run marimo edit elevation_h3_clean.py --sandbox
 ```
 
 The Jupyter reference notebooks in `refrences/` run via:
@@ -42,9 +42,11 @@ uvx juv run refrences/<notebook>.ipynb
 
 | Notebook | Description |
 |----------|-------------|
-| `elevation_h3.py` | Marimo notebook — single-threaded H3 pipeline |
+| `elevation_h3_clean.py` | **Marimo notebook** — concurrent H3 pipeline with reactive colormap/layer controls |
+| `elevation_h3_clean.ipynb` | Jupyter version of the same pipeline |
+| `elevation_h3_v3.ipynb` | Development notebook — concurrent pipeline with `ThreadPoolExecutor` |
 | `elevation_h3_v2.ipynb` | Streaming H3 aggregation |
-| `elevation_h3_v3.ipynb` | Concurrent pipeline with `ThreadPoolExecutor`, configurable workers, tile-based processing |
+| `elevation_h3.py` | Original Marimo notebook — single-threaded H3 pipeline |
 
 ## Resolution Guide
 
@@ -69,5 +71,5 @@ The pipeline calculates pixel resolution to get ~6 pixels per H3 hex edge. For C
 - [ ] **Overture building joins** — join Overture Maps building footprints to H3 elevation hexes via `h3_polygon_wkt_to_cells_experimental` for per-building elevation
 - [ ] **River REMs (Relative Elevation Models)** — programmatic floodplain visualization using [HyRiver](https://docs.hyriver.io/) (`pynhd` for NHDPlus flowlines, `py3dep`/`seamless-3dep` for DEM) or [RiverREM](https://github.com/OpenTopography/RiverREM) for automated centerline-detrended elevation
 - [ ] **Pre-run hex count estimation** — calculate expected H3 hexagon count from bbox + resolution before running the pipeline as a safety check (large areas at high resolution can produce 50M+ hexagons)
+- [ ] **View state pitch/bearing** — lonboard `Map(view_state=...)` dict accepts pitch/bearing keys but they don't seem to apply on initial render; needs investigation
 - [ ] **WhiteboxTools flow accumulation** — `pywbt` for hydrologic analysis on the DEM
-- [ ] Port to Marimo with reactive UI controls for bbox, H3 resolution, and colormap selection
