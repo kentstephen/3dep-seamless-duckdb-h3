@@ -1,3 +1,5 @@
+# Source: https://github.com/developmentseed/lonboard/blob/main/examples/marimo/nyc_taxi_trips.py
+# Credit: Development Seed / lonboard
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
