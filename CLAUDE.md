@@ -47,6 +47,8 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 
 - **`river_rem_s3dep.py`** - River REM notebook using `seamless-3dep` (USGS National Map) instead of Planetary Computer STAC. Full 10m CONUS coverage without gaps. Default bbox: Willamette River, OR. Branch: `feature/river-rem-s3dep`.
 - **`river_rem_h3.py`** - Original River REM notebook using Planetary Computer STAC + odc-stac. Branch: `feature/river-rem-hyriver`.
+- **`elevation_1m.py`** - 1m DEM → H3 hexagons via `seamless-3dep` `get_map(res=1)`. Branch: `feature/river-rem-1m`.
+- **`elevation_h3_clean_with_fused_census.py`** - Elevation + Fused census H3 join. Two layers, different colormaps. Queries Source Coop Parquet via DuckDB.
 
 ## Key Reference Files (`refrences/`)
 
@@ -66,6 +68,13 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
   - **Cell C** (existing): map + colormap/layer controls
 - **Key insight**: Decouple pixel resolution from H3 resolution. `calculate_resolution_for_h3` currently ties them together, but for REM work you want native DEM detail for IDW quality — H3 res only affects GROUP BY granularity
 - **Applies to all notebooks** (`elevation_h3_clean.py`, `river_rem_h3.py`)
+
+### Fused Census + H3 Elevation Joins
+- **Goal**: Join Fused H3 census data (res 7 or 8) from Source Coop with elevation H3 hexes. Two layers, different colormaps — elevation + population/demographics side by side.
+- **Data**: Fused publishes pre-aggregated US Census data at H3 resolution on Source Coop as Parquet. Query directly with DuckDB: `SELECT * FROM read_parquet('s3://source-coop/fused/...')` or via HTTPS URL.
+- **Join**: Simple H3 index join — elevation hexes may be finer resolution (res 10-12), so either re-aggregate elevation to res 7/8 to match census, or use `h3_cell_to_parent()` in DuckDB.
+- **Colormaps**: Expand colormap options — add more scientific/sequential cmaps (cmocean, cubehelix variants) to both this notebook and the 1m elevation notebook.
+- **Notebook**: `elevation_h3_clean_with_fused_census.py` — extends `elevation_h3_clean.py` with a second DuckDB query for census data and a second H3HexagonLayer.
 
 ### Overture + H3 Elevation Joins
 - Join Overture buildings to H3 elevation hexes using `h3_polygon_wkt_to_cells_experimental` — convert building footprint polygons to H3 cell sets, then join on hex index to get elevation per building
