@@ -93,6 +93,11 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - Warn if estimated count exceeds a threshold (e.g., 50M hexes) — at that scale memory pressure is real (both Arrow table and lonboard rendering)
 - Could also estimate from tile count: `num_tiles * avg_hexes_per_tile` based on a calibration run
 
+### Polygon Clipping (instead of bbox-only)
+- Bounding box tools always export axis-aligned envelopes — rotated/drawn shapes become their enclosing rectangle
+- **Workaround**: Load DEM with the axis-aligned bbox (required by data service), then clip to actual polygon before H3 aggregation: `dem.rio.clip([shapely_polygon], crs=4326)`
+- Could add a polygon input option to notebooks (GeoJSON text input, or draw-on-map if lonboard adds drawing tools)
+
 ### Memory Management
 - `del hex_result` after converting to arro3 Table — avoids holding both PyArrow and arro3 copies of large datasets (40M+ hexes at res 12)
 - Consider DuckDB persistent storage for large aggregations instead of in-memory Arrow tables

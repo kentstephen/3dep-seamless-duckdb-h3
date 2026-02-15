@@ -12,6 +12,7 @@
 #     "pyproj==3.7.2",
 #     "rioxarray",
 #     "seamless-3dep",
+#     "shapely==2.1.2",
 #     "sqlglot",
 # ]
 # ///
@@ -97,7 +98,7 @@ def _(Path, Transformer, duckdb, np, pa, s3dep):
 
     def get_con():
         con = duckdb.connect()
-        con.sql("SET memory_limit = '512MB'; LOAD h3;")
+        con.sql("SET memory_limit = '2GB'; LOAD h3;")
         return con
 
     def aggregate_to_h3(dem, h3_res):
@@ -148,8 +149,16 @@ def _(mo):
 @app.cell
 def _(h3):
     # Carson River, NV (small bbox for 1m)
-    bbox = (-119.56, 39.26, -119.50, 39.29)
-    H3_RES = 12
+    # bbox = (-119.56, 39.26, -119.50, 39.29)
+    # Snake River WY near Moose
+    # bbox = (-110.714551,43.665157,-110.683452,43.694867)
+    # bigger snake
+    # bbox= (-110.720835,43.663083,-110.670889,43.703449)
+    # Pittsburgh
+    # bbox = (-80.056754,40.41697,-79.935838,40.47789)
+    # Bigger Pitt
+    bbox = (-80.068926,40.388062,-79.914701,40.502822)
+    H3_RES = 13
     DEM_RES = 1
     SAVE_DIR = "cache/dem_1m"
 
@@ -160,15 +169,7 @@ def _(h3):
 
 
 @app.cell
-def _(
-    DEM_RES,
-    H3_RES,
-    SAVE_DIR,
-    Table,
-    aggregate_to_h3,
-    bbox,
-    load_dem,
-):
+def _(DEM_RES, H3_RES, SAVE_DIR, Table, aggregate_to_h3, bbox, load_dem):
     dem = load_dem(bbox, SAVE_DIR, res=DEM_RES)
     hex_result = aggregate_to_h3(dem, H3_RES)
 
@@ -222,6 +223,7 @@ def _(
 
     _elev_values = np.array(table["metric"].to_pylist())
     _normalizer = Normalize(float(np.min(_elev_values)), float(np.max(_elev_values)))
+    # _normalizer = Normalize(float(np.min(_elev_values)), float(1982.0))
     _colors = apply_continuous_cmap(_normalizer(_elev_values), LaJolla_20, alpha=1)
 
     layer = H3HexagonLayer(
