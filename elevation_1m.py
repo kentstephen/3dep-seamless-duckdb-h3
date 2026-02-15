@@ -53,14 +53,13 @@ def _():
     from lonboard import Map, H3HexagonLayer
     from lonboard.colormap import apply_continuous_cmap
     from lonboard.basemap import CartoBasemap
-    from lonboard.controls import FullscreenControl, NavigationControl
+    from lonboard.controls import FullscreenControl
 
     import warnings
     warnings.filterwarnings("ignore", message="Dataset has no geotransform", category=UserWarning)
     return (
         CartoBasemap,
         FullscreenControl,
-        NavigationControl,
         H3HexagonLayer,
         Map,
         Normalize,
@@ -75,6 +74,12 @@ def _():
         pa,
         s3dep,
     )
+
+
+@app.cell
+def _(duckdb):
+    duckdb.sql("INSTALL h3 FROM community")
+    return
 
 
 @app.cell
@@ -95,7 +100,7 @@ def _(Path, Transformer, duckdb, np, pa, s3dep):
         print(f"DEM shape: {dem.shape}, CRS: {dem.rio.crs}")
         return dem
 
-    duckdb.sql("INSTALL h3 FROM community")
+
 
     def get_con():
         con = duckdb.connect()
@@ -159,7 +164,7 @@ def _(h3):
     # bbox = (-80.056754,40.41697,-79.935838,40.47789)
     # Bigger Pitt
     bbox = (-80.068926,40.388062,-79.914701,40.502822)
-    H3_RES = 13
+    H3_RES = 12
     DEM_RES = 1
     SAVE_DIR = "cache/dem_1m"
 
@@ -185,7 +190,6 @@ def _(
     FullscreenControl,
     H3HexagonLayer,
     Map,
-    NavigationControl,
     Normalize,
     apply_continuous_cmap,
     bbox,
@@ -216,7 +220,7 @@ def _(
         label="Colormap",
     )
     elevation_scale_input = mo.ui.number(
-        start=0.1, stop=50.0, step=0.5, value=5.0, label="Elevation Scale"
+        start=0.1, stop=50.0, step=0.5, value=2.5, label="Elevation Scale"
     )
     opacity_input = mo.ui.number(
         start=0.0, stop=1.0, step=0.05, value=1, label="Opacity"
@@ -238,11 +242,11 @@ def _(
         extruded=False,
         elevation_scale=5.0,
         opacity=1,
+    
     )
     lng = (bbox[0] + bbox[2]) / 2
     lat = (bbox[1] + bbox[3]) / 2
     fullscreen = FullscreenControl(position="top-right")
-    nav = NavigationControl(position="top-left", visualize_pitch=True, show_compass=True)
     view_state = {
         "longitude": lng,
         "latitude": lat,
@@ -251,7 +255,7 @@ def _(
         "bearing": 0,
     }
 
-    m = Map(layers=[layer], view_state=view_state, basemap_style=CartoBasemap.DarkMatterNoLabels, controls=[fullscreen, nav])
+    m = Map(layers=[layer], view_state=view_state, basemap_style=CartoBasemap.DarkMatterNoLabels, use_device_pixels=True,  controls=[fullscreen])
 
     _layer_controls = mo.hstack([cmap_dropdown, elevation_scale_input, opacity_input, extruded_toggle], justify="start", gap=0.5)
     mo.vstack([m, _layer_controls])
@@ -269,18 +273,20 @@ def _(
     Normalize,
     apply_continuous_cmap,
     cmap_dropdown,
-    elevation_scale_input,
-    extruded_toggle,
     layer,
     np,
-    opacity_input,
     table,
 ):
+    # Only re-runs when colormap changes — the expensive part
     _elev_values = np.array(table["metric"].to_pylist())
     _normalizer = Normalize(float(np.min(_elev_values)), float(np.max(_elev_values)))
-
     layer.get_fill_color = apply_continuous_cmap(_normalizer(_elev_values), cmap_dropdown.value, alpha=1)
-    layer.get_elevation = _elev_values
+    return
+
+
+@app.cell
+def _(elevation_scale_input, extruded_toggle, layer, opacity_input):
+    # Scalar trait updates only — instant, no array recomputation
     layer.elevation_scale = elevation_scale_input.value
     layer.opacity = opacity_input.value
     layer.extruded = extruded_toggle.value
