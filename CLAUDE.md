@@ -117,8 +117,11 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **Re-aggregation (future idea)**: Re-aggregate to different H3 resolutions based on zoom level — the real Fused-style play. Not in scope yet, separate architecture discussion
 
 ### 1m DEM from USGS
-- USGS 3DEP has 1m DEMs for much of CONUS, but likely not available via Planetary Computer — would need direct USGS source (TNM, S3, or STAC)
-- Whole other can of worms — different data source, tiling, and potentially much larger data volumes
+- **Working**: `s3dep.get_map("DEM", bbox, save_dir, res=1)` pulls 1m data from USGS ArcGIS export service. Tested on Carson River NV, Snake River WY, Pittsburgh PA.
+- **Known issue**: USGS ArcGIS endpoint times out on larger bboxes or under load. `seamless-3dep` uses `tiny_retriever` which fires concurrent requests with no retry. Connection timeouts are common for ~0.2°×0.2° bboxes at 1m.
+- **Workaround**: Retry, or use a smaller bbox. The service is variable — same bbox may work later.
+- **Better path (future)**: Direct S3 COG reads from `s3://prd-tnm/StagedProducts/Elevation/1m/Projects/` — bypasses ArcGIS entirely. Needs tile discovery (TNM API or STAC). Also watch USGS S1M (Seamless 1m) product rollout.
+- **Notebook**: `elevation_1m.py` on branch `feature/river-rem-1m`
 
 ### WhiteboxTools (WBT) Integration
 - Implement WBT flow accumulation / hydrological analysis on DEM
