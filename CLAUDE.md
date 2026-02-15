@@ -98,6 +98,12 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **Workaround**: Load DEM with the axis-aligned bbox (required by data service), then clip to actual polygon before H3 aggregation: `dem.rio.clip([shapely_polygon], crs=4326)`
 - Could add a polygon input option to notebooks (GeoJSON text input, or draw-on-map if lonboard adds drawing tools)
 
+### Lonboard Raster Layer Option
+- For users who just want a flat DEM visualization (no H3 hexagons), use lonboard's `BitmapLayer` or raster layer directly from the xarray DataArray
+- Skips the entire DuckDB H3 aggregation step — much faster, lower memory
+- Could offer a toggle in notebooks: "H3 hexagons" vs "Raster" visualization mode
+- H3 is still needed for aggregation stats, joins (Overture buildings), and 3D extrusion — raster is just for quick previews
+
 ### Memory Management
 - `del hex_result` after converting to arro3 Table — avoids holding both PyArrow and arro3 copies of large datasets (40M+ hexes at res 12)
 - Consider DuckDB persistent storage for large aggregations instead of in-memory Arrow tables
