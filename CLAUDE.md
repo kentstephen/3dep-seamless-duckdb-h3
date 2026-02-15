@@ -43,6 +43,11 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - H3 res 10 + 10m → 7.6 px/edge (native read, good detail)
 - H3 res 12 + 10m → 1.1 px/edge (near 1:1 pixel-to-hex, max detail but minimal aggregation)
 
+## Notebooks
+
+- **`river_rem_s3dep.py`** - River REM notebook using `seamless-3dep` (USGS National Map) instead of Planetary Computer STAC. Full 10m CONUS coverage without gaps. Default bbox: Willamette River, OR. Branch: `feature/river-rem-s3dep`.
+- **`river_rem_h3.py`** - Original River REM notebook using Planetary Computer STAC + odc-stac. Branch: `feature/river-rem-hyriver`.
+
 ## Key Reference Files (`refrences/`)
 
 - **`3dep_fused_udf.py`** - Primary reference for the 3DEP pipeline. Shows STAC query, DEM loading, H3 aggregation via DuckDB, and WhiteboxTools flow accumulation. Port this to Marimo.
@@ -52,6 +57,15 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **`overture_core.py`** - Shared Overture Maps data functions (from lidar-h3-notebooks). GeoParquet loading via `obstore` + `geoarrow-rust`, geometry type splitting, lonboard layer building. Reference for Overture building/infrastructure joins.
 
 ## Project Goals & TODOs
+
+### HIGH PRIORITY: Decouple H3 Resolution from DEM Loading
+- **Problem**: Changing H3 res re-runs the entire pipeline (STAC query, tile loading, DEM assembly, REM computation) — the slow parts that don't depend on H3 res at all
+- **Fix**: Separate the marimo cell graph so DEM/REM arrays are cached independently of H3 res:
+  - **Cell A** (slow, runs once per bbox): bbox + collection + pixel resolution → STAC query → load DEM → compute REM. Pixel resolution should be fixed (e.g. 10m native) regardless of H3 res
+  - **Cell B** (fast, re-runs on res change): H3 res as `mo.ui.number` → DuckDB H3 aggregation on cached DEM/REM arrays → produces `table`
+  - **Cell C** (existing): map + colormap/layer controls
+- **Key insight**: Decouple pixel resolution from H3 resolution. `calculate_resolution_for_h3` currently ties them together, but for REM work you want native DEM detail for IDW quality — H3 res only affects GROUP BY granularity
+- **Applies to all notebooks** (`elevation_h3_clean.py`, `river_rem_h3.py`)
 
 ### Overture + H3 Elevation Joins
 - Join Overture buildings to H3 elevation hexes using `h3_polygon_wkt_to_cells_experimental` — convert building footprint polygons to H3 cell sets, then join on hex index to get elevation per building
@@ -70,6 +84,8 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **RiverREM** (alternative): OpenTopography's automated tool (https://github.com/OpenTopography/RiverREM) — fully automated but uses OSM for centerlines instead of NHDPlus. `pip install riverrem`, then `REMMaker(dem=path).make_rem()`
 - **Integration**: After computing REM, aggregate *relative* elevation to H3 with existing DuckDB pipeline — REM values per hex make excellent floodplain visualizations
 - **Deps to add**: `pynhd`, `pygeoutils`, `scipy`, `opt-einsum` (for efficient IDW weight computation)
+- **Branch**: `feature/river-rem-hyriver` — start with HyRiver approach, bbox-based flowline query + IDW surface interpolation, feed REM values into existing H3 aggregation pipeline
+- **Notebook**: `river_rem_h3.py` — Carson River, NV bbox from HyRiver example, `py3dep` for DEM, `pynhd` for flowlines, IDW REM, DuckDB H3 aggregation, cubehelix colormap
 
 ### Pre-Run Hex Count Estimation
 - Before running the full pipeline, estimate the number of H3 hexagons that will be produced from a given bbox + H3 resolution as a safety check
@@ -81,10 +97,28 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - `del hex_result` after converting to arro3 Table — avoids holding both PyArrow and arro3 copies of large datasets (40M+ hexes at res 12)
 - Consider DuckDB persistent storage for large aggregations instead of in-memory Arrow tables
 
+### Viewport-Based Hex Filtering (elevation_h3_clean.py)
+- **Goal**: Don't load every hexagon into lonboard at once — filter to what's in view
+- **Pattern**: NYC taxi example (`refrences/nyc_taxi_trips.py`) uses `selected_bounds` + reactive SQL re-query
+- **DuckDB filter approach**: Store full hex result in DuckDB table after pipeline, filter with `h3_cell_to_lat()`/`h3_cell_to_lng()` against viewport bounds
+- **`selected_bounds` approach**: User draws box on map → fires callback → DuckDB filters hexes in bounds → layer updates. Proven pattern, discrete user action, no debounce needed
+- **`view_state` approach**: Observe map `view_state` traitlet (lon/lat/zoom/pitch/bearing) for automatic viewport filtering. Challenge: fires every frame during pan/zoom, needs debounce or manual "Refresh View" button trigger
+- **Re-aggregation (future idea)**: Re-aggregate to different H3 resolutions based on zoom level — the real Fused-style play. Not in scope yet, separate architecture discussion
+
+### 1m DEM from USGS
+- USGS 3DEP has 1m DEMs for much of CONUS, but likely not available via Planetary Computer — would need direct USGS source (TNM, S3, or STAC)
+- Whole other can of worms — different data source, tiling, and potentially much larger data volumes
+
+### WhiteboxTools (WBT) Integration
+- Implement WBT flow accumulation / hydrological analysis on DEM
+- Reference code in https://github.com/kentstephen/fused_udfs — user will locate the specific UDF when ready
+- See also `refrences/3dep_fused_udf.py` which shows WBT flow accumulation pattern
+
 ### Pipeline & Infra
 - Use `obstore` with Planetary Computer auth (https://developmentseed.org/obstore/latest/api/auth/planetary-computer/) alongside pystac
 - WhiteboxTools (pywbt) flow accumulation on DEM is a future TODO
 - Explore CARTO cartocolors continuous colormaps (web service API)
+- **Cubehelix colormaps**: Perceptually uniform, monotonically increasing luminance — ideal for elevation. Mike Bostock's d3 cubehelix gist: https://gist.github.com/mbostock/11415064. Python options: `palettable.cubehelix` (already a dep) or `matplotlib.cm.cubehelix`. Cubehelix is especially good for 3D extruded hex maps where you need luminance to track elevation faithfully
 - Use `morecantile` (https://github.com/developmentseed/morecantile) for tile-based memory management with DuckDB + xarray
 - Consider lonboard raster layer or National Map tool for coverage visualization
 - Investigate Development Seed's async GeoTIFF reader (includes COG support) for async tile loading
@@ -95,3 +129,57 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 
 - Always create a new branch for every feature
 - Update plans and discourse in this file when making progress
+
+# Note from Stephen, we should look at refrences/rem.ipynb from https://github.com/hyriver/HyRiver-examples/blob/main/notebooks/ when we start up again
+## also, we had this runnning with hyriver's tooling today, now it's broken again 
+```DEM shape: (647, 1295), CRS: EPSG:4269
+<xarray.DataArray (y: 647, x: 1295)> Size: 3MB
+array([[1559.0302, 1563.4066, 1565.601 , ..., 1362.3987, 1361.4998,
+        1360.7252],
+       [1556.7375, 1560.5084, 1562.8693, ..., 1360.0778, 1359.2538,
+        1358.2104],
+       [1558.328 , 1555.6216, 1557.7102, ..., 1357.6361, 1356.847 ,
+        1355.7034],
+       ...,
+       [1327.268 , 1327.1348, 1326.977 , ..., 1741.7252, 1740.5656,
+        1739.8575],
+       [1327.3658, 1327.1628, 1326.9523, ..., 1742.2513, 1741.0785,
+        1740.1276],
+       [1327.1184, 1326.9799, 1326.9714, ..., 1743.0371, 1742.1914,
+        1741.1156]], shape=(647, 1295), dtype=float32)
+Coordinates:
+  * y            (y) float64 5kB 39.3 39.3 39.3 39.3 ... 39.24 39.24 39.24 39.24
+  * x            (x) float64 10kB -119.6 -119.6 -119.6 ... -119.5 -119.5 -119.5
+    spatial_ref  int64 8B 0
+Attributes:
+    AREA_OR_POINT:  Area
+    scale_factor:   1.0
+    add_offset:     0.0
+    _FillValue:     nan
+Main stem: 2 segments
+
+Traceback (most recent call last):
+  File "/var/folders/7c/sjv2kprs3qs3x738ldnw1b040000gn/T/marimo_32823/__marimo__cell_PKri_.py", line 3, in <module>
+    river_line = get_flowlines(bbox, dem.rio.crs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/var/folders/7c/sjv2kprs3qs3x738ldnw1b040000gn/T/marimo_32823/__marimo__cell_vblA_.py", line 33, in get_flowlines
+    river_line = geoutils.smooth_linestring(merged, 0.1, npts)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/pygeoutils/smoothing.py", line 463, in smooth_linestring
+    return LineString(np.c_[spl_x(konts), spl_y(konts)])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/geometry/linestring.py", line 76, in __new__
+    geom = shapely.linestrings(coordinates)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/decorators.py", line 173, in wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/decorators.py", line 88, in wrapped
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/creation.py", line 218, in linestrings
+    return lib.linestrings(coords, np.intc(handle_nan), out=out, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+shapely.errors.GEOSException: IllegalArgumentException: point array must contain 0 or >1 elements
+
+```
