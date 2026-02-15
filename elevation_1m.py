@@ -166,7 +166,9 @@ def _(h3):
     # Pittsburgh
     # bbox = (-80.056754,40.41697,-79.935838,40.47789)
     # Bigger Pitt
-    bbox = (-80.068926,40.388062,-79.914701,40.502822)
+    # bbox = (-80.068926,40.388062,-79.914701,40.502822)
+    # mount washington
+    bbox= (-71.410315,44.165402,-71.196076,44.377283)
     H3_RES = 12
     DEM_RES = 1
 
@@ -244,7 +246,7 @@ def _(
         extruded=False,
         elevation_scale=2.5,
         opacity=1,
-    
+
     )
     lng = (bbox[0] + bbox[2]) / 2
     lat = (bbox[1] + bbox[3]) / 2
@@ -271,14 +273,7 @@ def _(
 
 
 @app.cell
-def _(
-    Normalize,
-    apply_continuous_cmap,
-    cmap_dropdown,
-    layer,
-    np,
-    table,
-):
+def _(Normalize, apply_continuous_cmap, cmap_dropdown, layer, np, table):
     # Only re-runs when colormap changes — the expensive part
     _elev_values = np.array(table["metric"].to_pylist())
     _normalizer = Normalize(float(np.min(_elev_values)), float(np.max(_elev_values)))
