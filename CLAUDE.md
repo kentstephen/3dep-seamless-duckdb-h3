@@ -88,6 +88,9 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - Works as drop-in with `lonboard.colormap.apply_continuous_cmap()` — same interface as any palettable palette
 - `.mpl_colormap` attribute gives a fully continuous interpolated matplotlib colormap
 - Cubehelix degrades gracefully to grayscale (designed by D.A. Green for scientific print)
+- `start_hue`/`end_hue` (degrees, -360 to 360) is more intuitive than `start`/`rotation` for picking color ranges — e.g. `Cubehelix.make(n=256, start_hue=240, end_hue=-300, min_sat=1, max_sat=2.5, min_light=0.3, max_light=0.8, gamma=0.9)`
+- Reference gist (palettable contributor): https://gist.github.com/jonathansick/1d278baad7345a1281dd
+- D3 interactive cubehelix color picker (useful for visually tuning params): https://gist.github.com/mBostock/ba8d75e45794c27168b5
 - Docs: https://jiffyclub.github.io/palettable/cubehelix/
 
 ### Pipeline & Infra
