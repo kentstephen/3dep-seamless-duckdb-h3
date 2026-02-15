@@ -90,20 +90,13 @@ def _(Path, Transformer, duckdb, np, pa, s3dep):
         east, north = t.transform(bbox[2], bbox[3])
         return (west, south, east, north)
 
-    def _clean_cache(save_dir, max_age_hours):
-        """Remove cached tiffs older than max_age_hours."""
-        import time
-        cutoff = time.time() - (max_age_hours * 3600)
-        for f in Path(save_dir).glob("*.tiff"):
-            if f.stat().st_mtime < cutoff:
-                f.unlink()
-                print(f"Cleaned stale cache: {f.name}")
+    def load_dem(bbox, res=1):
+        """Load DEM from USGS 3DEP via get_map. Returns xarray DataArray in EPSG:3857.
 
-    def load_dem(bbox, save_dir, res=1, max_age_hours=24):
-        """Load DEM from USGS 3DEP via get_map. Returns xarray DataArray in EPSG:3857."""
-        save_dir = Path(save_dir)
-        save_dir.mkdir(parents=True, exist_ok=True)
-        _clean_cache(save_dir, max_age_hours)
+        Downloads to a temp directory that the OS cleans up automatically.
+        """
+        import tempfile
+        save_dir = Path(tempfile.mkdtemp(prefix="3dep_1m_"))
         tiff_files = s3dep.get_map("DEM", bbox, save_dir, res=res)
         bbox_3857 = _reproject_bbox(bbox, 4326, 3857)
         dem = s3dep.tiffs_to_da(tiff_files, bbox_3857, crs=3857)
@@ -176,18 +169,16 @@ def _(h3):
     bbox = (-80.068926,40.388062,-79.914701,40.502822)
     H3_RES = 12
     DEM_RES = 1
-    SAVE_DIR = "cache/dem_1m"
-    CACHE_MAX_AGE_HOURS = 24  # delete cached tiffs older than this
 
     _hex_edge = h3.average_hexagon_edge_length(H3_RES, unit='m')
     _px_per_edge = _hex_edge / DEM_RES
     print(f"H3 res {H3_RES}: hex edge {_hex_edge:.0f}m, DEM {DEM_RES}m, {_px_per_edge:.1f} px/edge")
-    return CACHE_MAX_AGE_HOURS, DEM_RES, H3_RES, SAVE_DIR, bbox
+    return DEM_RES, H3_RES, bbox
 
 
 @app.cell
-def _(CACHE_MAX_AGE_HOURS, DEM_RES, H3_RES, SAVE_DIR, Table, aggregate_to_h3, bbox, load_dem):
-    dem = load_dem(bbox, SAVE_DIR, res=DEM_RES, max_age_hours=CACHE_MAX_AGE_HOURS)
+def _(DEM_RES, H3_RES, Table, aggregate_to_h3, bbox, load_dem):
+    dem = load_dem(bbox, res=DEM_RES)
     hex_result = aggregate_to_h3(dem, H3_RES)
 
     table = Table.from_arrow(hex_result)

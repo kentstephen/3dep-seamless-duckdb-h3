@@ -6,5 +6,4 @@ __pycache__/
 *.duckdb.wal
 .ipynb_checkpoints/
 .DS_Store
-cache/
 __marimo__/
