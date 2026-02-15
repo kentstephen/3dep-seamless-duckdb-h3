@@ -78,6 +78,7 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - Could also estimate from tile count: `num_tiles * avg_hexes_per_tile` based on a calibration run
 
 ### Memory Management
+- **NEVER use reactive/automatic re-aggregation tied to map viewport changes.** These datasets can be enormous (40M+ hexes at res 12) — a single reactive trigger at the wrong resolution or extent can crash the browser and kill the kernel. All aggregation must be explicitly user-initiated, never fired by pan/zoom/viewport events.
 - `del hex_result` after converting to arro3 Table — avoids holding both PyArrow and arro3 copies of large datasets (40M+ hexes at res 12)
 - Consider DuckDB persistent storage for large aggregations instead of in-memory Arrow tables
 
