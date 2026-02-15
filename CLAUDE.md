@@ -81,6 +81,15 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - `del hex_result` after converting to arro3 Table — avoids holding both PyArrow and arro3 copies of large datasets (40M+ hexes at res 12)
 - Consider DuckDB persistent storage for large aggregations instead of in-memory Arrow tables
 
+### Cubehelix Continuous Gradients
+- Palettable's pre-made colormaps max out at 20 discrete steps — use `Cubehelix.make(n=256)` for smooth continuous gradients
+- `from palettable.cubehelix import Cubehelix` then `Cubehelix.make(start=0.3, rotation=-0.5, n=256, min_light=0.1, max_light=0.9, reverse=True)`
+- Key params: `start` (0=blue,1=red,2=green), `rotation` (rainbow rotations, negative=Blue→Red), `n` (number of color steps), `min_light`/`max_light` (avoid pure black/white), `start_hue`/`end_hue` (override start+rotation with explicit hue range)
+- Works as drop-in with `lonboard.colormap.apply_continuous_cmap()` — same interface as any palettable palette
+- `.mpl_colormap` attribute gives a fully continuous interpolated matplotlib colormap
+- Cubehelix degrades gracefully to grayscale (designed by D.A. Green for scientific print)
+- Docs: https://jiffyclub.github.io/palettable/cubehelix/
+
 ### Pipeline & Infra
 - Use `obstore` with Planetary Computer auth (https://developmentseed.org/obstore/latest/api/auth/planetary-computer/) alongside pystac
 - WhiteboxTools (pywbt) flow accumulation on DEM is a future TODO
