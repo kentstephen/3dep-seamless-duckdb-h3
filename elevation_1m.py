@@ -90,10 +90,20 @@ def _(Path, Transformer, duckdb, np, pa, s3dep):
         east, north = t.transform(bbox[2], bbox[3])
         return (west, south, east, north)
 
-    def load_dem(bbox, save_dir, res=1):
+    def _clean_cache(save_dir, max_age_hours):
+        """Remove cached tiffs older than max_age_hours."""
+        import time
+        cutoff = time.time() - (max_age_hours * 3600)
+        for f in Path(save_dir).glob("*.tiff"):
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                print(f"Cleaned stale cache: {f.name}")
+
+    def load_dem(bbox, save_dir, res=1, max_age_hours=24):
         """Load DEM from USGS 3DEP via get_map. Returns xarray DataArray in EPSG:3857."""
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
+        _clean_cache(save_dir, max_age_hours)
         tiff_files = s3dep.get_map("DEM", bbox, save_dir, res=res)
         bbox_3857 = _reproject_bbox(bbox, 4326, 3857)
         dem = s3dep.tiffs_to_da(tiff_files, bbox_3857, crs=3857)
@@ -167,16 +177,17 @@ def _(h3):
     H3_RES = 12
     DEM_RES = 1
     SAVE_DIR = "cache/dem_1m"
+    CACHE_MAX_AGE_HOURS = 24  # delete cached tiffs older than this
 
     _hex_edge = h3.average_hexagon_edge_length(H3_RES, unit='m')
     _px_per_edge = _hex_edge / DEM_RES
     print(f"H3 res {H3_RES}: hex edge {_hex_edge:.0f}m, DEM {DEM_RES}m, {_px_per_edge:.1f} px/edge")
-    return DEM_RES, H3_RES, SAVE_DIR, bbox
+    return CACHE_MAX_AGE_HOURS, DEM_RES, H3_RES, SAVE_DIR, bbox
 
 
 @app.cell
-def _(DEM_RES, H3_RES, SAVE_DIR, Table, aggregate_to_h3, bbox, load_dem):
-    dem = load_dem(bbox, SAVE_DIR, res=DEM_RES)
+def _(CACHE_MAX_AGE_HOURS, DEM_RES, H3_RES, SAVE_DIR, Table, aggregate_to_h3, bbox, load_dem):
+    dem = load_dem(bbox, SAVE_DIR, res=DEM_RES, max_age_hours=CACHE_MAX_AGE_HOURS)
     hex_result = aggregate_to_h3(dem, H3_RES)
 
     table = Table.from_arrow(hex_result)
@@ -220,10 +231,10 @@ def _(
         label="Colormap",
     )
     elevation_scale_input = mo.ui.number(
-        start=0.1, stop=50.0, step=0.5, value=2.5, label="Elevation Scale"
+        start=0.1, stop=50.0, step=1.0, value=2.5, label="Elevation Scale"
     )
     opacity_input = mo.ui.number(
-        start=0.0, stop=1.0, step=0.05, value=1, label="Opacity"
+        start=0.0, stop=1.0, step=0.1, value=1.0, label="Opacity"
     )
     extruded_toggle = mo.ui.switch(value=False, label="Extruded")
 
@@ -240,7 +251,7 @@ def _(
         stroked=False,
         get_elevation=_elev_values,
         extruded=False,
-        elevation_scale=5.0,
+        elevation_scale=2.5,
         opacity=1,
     
     )
