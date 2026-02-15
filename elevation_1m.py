@@ -90,16 +90,14 @@ def _(Path, Transformer, duckdb, np, pa, s3dep):
         east, north = t.transform(bbox[2], bbox[3])
         return (west, south, east, north)
 
-    def load_dem(bbox, res=1, pixel_max=2_000_000):
+    def load_dem(bbox, res=1):
         """Load DEM from USGS 3DEP via get_map. Returns xarray DataArray in EPSG:3857.
 
         Downloads to a temp directory that the OS cleans up automatically.
-        pixel_max controls sub-tile size — smaller = more requests but less
-        likely to timeout on the USGS ArcGIS export service.
         """
         import tempfile
         save_dir = Path(tempfile.mkdtemp(prefix="3dep_1m_"))
-        tiff_files = s3dep.get_map("DEM", bbox, save_dir, res=res, pixel_max=pixel_max)
+        tiff_files = s3dep.get_map("DEM", bbox, save_dir, res=res)
         bbox_3857 = _reproject_bbox(bbox, 4326, 3857)
         dem = s3dep.tiffs_to_da(tiff_files, bbox_3857, crs=3857)
         print(f"DEM shape: {dem.shape}, CRS: {dem.rio.crs}")
