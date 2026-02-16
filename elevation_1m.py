@@ -52,7 +52,7 @@ def _():
 
     from lonboard import Map, H3HexagonLayer
     from lonboard.colormap import apply_continuous_cmap
-    from lonboard.basemap import CartoBasemap
+    from lonboard.basemap import CartoBasemap, MaplibreBasemap
     from lonboard.controls import FullscreenControl
 
     import warnings
@@ -164,7 +164,7 @@ def _(h3):
     # bigger snake
     # bbox= (-110.720835,43.663083,-110.670889,43.703449)
     # Pittsburgh
-    # bbox = (-80.056754,40.41697,-79.935838,40.47789)
+    bbox = (-80.056754,40.41697,-79.935838,40.47789)
     # Bigger Pitt
     # bbox = (-80.068926,40.388062,-79.914701,40.502822)
     # mount washington
@@ -174,9 +174,9 @@ def _(h3):
     # Yosemite
     # bbox = [-119.8017,37.6139,-119.2356,37.9822]
     # Yosemite zoom to village
-    bbox = [-119.748015,37.682027,-119.470209,37.786275]
+    # bbox = [-119.748015,37.682027,-119.470209,37.786275]
     H3_RES = 12
-    DEM_RES = 10 # changed to 10 meter
+    DEM_RES = 1
 
     _hex_edge = h3.average_hexagon_edge_length(H3_RES, unit='m')
     _px_per_edge = _hex_edge / DEM_RES
@@ -273,7 +273,7 @@ def _(
 
     m = Map(layers=[layer], 
             view_state=view_state, 
-            basemap_style=CartoBasemap.DarkMatterNoLabels, 
+            basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), 
             use_device_pixels=2.0,  
             controls=[fullscreen],
             parameters={"depthTest": True, "blend": True}, 

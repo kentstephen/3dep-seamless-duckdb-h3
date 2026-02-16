@@ -55,7 +55,7 @@ def _():
 
     from lonboard import Map, H3HexagonLayer
     from lonboard.colormap import apply_continuous_cmap
-    from lonboard.basemap import CartoBasemap
+    from lonboard.basemap import CartoBasemap, MaplibreBasemap
     from lonboard.controls import FullscreenControl
 
     import warnings
@@ -370,7 +370,7 @@ def _(
         "bearing": 20,
     }
 
-    m = Map(layers=[layer], view_state=view_state, basemap_style=CartoBasemap.DarkMatterNoLabels, controls=[fullscreen])
+    m = Map(layers=[layer], view_state=view_state, basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), controls=[fullscreen])
 
     _controls = mo.hstack([colormap_dropdown, elevation_scale_slider, opacity_slider, extruded_toggle])
     mo.vstack([m, _controls])
