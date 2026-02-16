@@ -56,7 +56,7 @@ def _():
     from lonboard import Map, H3HexagonLayer
     from lonboard.colormap import apply_continuous_cmap
     from lonboard.basemap import CartoBasemap, MaplibreBasemap
-    from lonboard.controls import FullscreenControl
+    from lonboard.controls import FullscreenControl, NavigationControl, ScaleControl
 
     import warnings
     warnings.filterwarnings("ignore", message="Dataset has no geotransform", category=UserWarning)
@@ -65,7 +65,9 @@ def _():
         FullscreenControl,
         H3HexagonLayer,
         Map,
+        NavigationControl,
         Normalize,
+        ScaleControl,
         Table,
         ThreadPoolExecutor,
         Transformer,
@@ -301,6 +303,8 @@ def _(
     FullscreenControl,
     H3HexagonLayer,
     Imola_20,
+    NavigationControl,
+    ScaleControl,
     Imola_20_r,
     Inferno_20,
     Inferno_20_r,
@@ -362,6 +366,7 @@ def _(
     lng= ((bbox[0] + bbox[2]) / 2)
     lat=((bbox[1] + bbox[3]) / 2)
     fullscreen = FullscreenControl(position="top-right")
+    nav = NavigationControl()
     view_state = {
         "longitude": lng,
         "latitude": lat,
@@ -370,7 +375,7 @@ def _(
         "bearing": 20,
     }
 
-    m = Map(layers=[layer], view_state=view_state, basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), controls=[fullscreen])
+    m = Map(layers=[layer], view_state=view_state, basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), controls=[fullscreen, nav, ScaleControl()])
 
     _controls = mo.hstack([colormap_dropdown, elevation_scale_slider, opacity_slider, extruded_toggle])
     mo.vstack([m, _controls])

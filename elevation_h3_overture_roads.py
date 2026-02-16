@@ -64,7 +64,7 @@ def _():
     from lonboard import Map, H3HexagonLayer
     from lonboard.colormap import apply_continuous_cmap
     from lonboard.basemap import CartoBasemap, MaplibreBasemap
-    from lonboard.controls import FullscreenControl
+    from lonboard.controls import FullscreenControl, NavigationControl, ScaleControl
 
     sys.path.insert(0, "refrences")
     from overture_core_segments_to_hex import get_store, load_geoarrow
@@ -77,7 +77,9 @@ def _():
         H3HexagonLayer,
         Map,
         MaplibreBasemap,
+        NavigationControl,
         Normalize,
+        ScaleControl,
         Table,
         ThreadPoolExecutor,
         Transformer,
@@ -94,7 +96,6 @@ def _():
         pa,
         planetary_computer,
         pystac_client,
-        shapely,
     )
 
 
@@ -113,7 +114,6 @@ def _(
     pa,
     planetary_computer,
     pystac_client,
-    shapely,
 ):
     def calculate_resolution_for_h3(h3_res, native_resolution=10, pixels_per_hex_edge=6):
         """Calculate odc-stac resolution to get ~pixels_per_hex_edge pixels per H3 hex edge."""
@@ -145,7 +145,7 @@ def _(
         print(f"{len(tiles)} tiles at zoom {zoom}")
         return tiles, tms
 
-    duckdb.sql("INSTALL h3 FROM community")
+    duckdb.sql("INSTALL h3 FROM community; INSTALL spatial;")
 
     def get_con():
         """In-memory connection for workers. LOAD only, no INSTALL."""
@@ -153,7 +153,9 @@ def _(
         con.sql("""
             SET temp_directory = './tmp';
             SET memory_limit = '512MB';
+            LOAD spatial;
             LOAD h3;
+            CALL register_geoarrow_extensions();
         """)
         return con
 
@@ -191,7 +193,7 @@ def _(
         con = get_con()
         result = con.sql(f"""
             SELECT
-                h3_latlng_to_cell_string(lat, lng, {h3_res}) AS hex,
+                h3_latlng_to_cell(lat, lng, {h3_res}) AS hex,
                 AVG(elevation) AS metric
             FROM tile_pa
             GROUP BY 1
@@ -241,21 +243,21 @@ def _(
 
         # from_arrow handles arro3 geoarrow tables directly (PyCapsule interface)
         gdf = gpd.GeoDataFrame.from_arrow(raw)
+        gdf = gdf.set_crs("EPSG:4326")
 
         # Buffer 100m in UTM, back to 4326
-        gdf["geometry"] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(100).to_crs("EPSG:4326")
+        gdf['geometry'] = gdf.to_crs(gdf.estimate_utm_crs()).buffer(100).to_crs('EPSG:4326')
         print(f"Buffered {len(gdf):,} segments by 100m")
 
         # Convert to WKT for DuckDB h3_polygon_wkt_to_cells
-        df_roads = gdf[["geometry"]].copy()
-        df_roads["geometry"] = df_roads["geometry"].apply(shapely.wkt.dumps)
+        gdf_arrow= gdf.to_arrow()
 
         # Polyfill buffered polygons to H3
         con = get_con()
         road_hexes = con.sql(f"""
             WITH to_cells AS (
-                SELECT unnest(h3_polygon_wkt_to_cells(geometry, {h3_res})) AS hex
-                FROM df_roads
+                SELECT unnest(h3_polygon_wkt_to_cells(ST_AsText(geometry), {h3_res})) AS hex
+                FROM gdf_arrow
             )
             SELECT hex, count(*) AS cnt
             FROM to_cells
@@ -366,7 +368,9 @@ def _(
     H3HexagonLayer,
     Map,
     MaplibreBasemap,
+    NavigationControl,
     Normalize,
+    ScaleControl,
     apply_continuous_cmap,
     bbox,
     mo,
@@ -417,6 +421,7 @@ def _(
     lng = ((bbox[0] + bbox[2]) / 2)
     lat = ((bbox[1] + bbox[3]) / 2)
     fullscreen = FullscreenControl(position="top-right")
+    nav = NavigationControl()
     view_state = {
         "longitude": lng,
         "latitude": lat,
@@ -425,7 +430,7 @@ def _(
         "bearing": 20,
     }
 
-    m = Map(layers=[layer], view_state=view_state, basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), controls=[fullscreen])
+    m = Map(layers=[layer], view_state=view_state, basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), controls=[fullscreen, nav, ScaleControl()])
 
     _controls = mo.hstack([colormap_dropdown, elevation_scale_slider, opacity_slider, extruded_toggle])
     mo.vstack([m, _controls])

@@ -57,6 +57,7 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **`new_schema_for_ept_duckdb_h3.ipynb`** - Shows mercantile tile-based parallel processing with DuckDB, two-stage H3 aggregation, and multiple lonboard layers.
 - **`landsat_vegetation_change_h3.ipynb`** - Shows memory-efficient streaming (process per-year, aggregate immediately to H3), DuckDB persistence, and linked map views.
 - **`overture_core.py`** - Shared Overture Maps data functions (from lidar-h3-notebooks). GeoParquet loading via `obstore` + `geoarrow-rust`, geometry type splitting, lonboard layer building. Reference for Overture building/infrastructure joins.
+ -- hey claude it's stephen, with this new notebook elevation_h3_overture_roads.py you made i think  you misunderstood me i want to see the 3d motorways with the dem not just highways it looks insane. this is what i was going for, sentinel-2 broken up into hexagons but with overture motorways ![alt text](<Screenshot 2025-05-01 at 9.05.18 PM.png>) the s2 would be fun with the dem at some point but maybe thats more a LPC thing, the trick with the roads is elevation but also variance which is easy with h3. reformat as a TODO and 100 meters is far too wide a buffer for this aoi. i want the layers set up like in here refrences/landsat_vegetation_change_h3.ipynb so i can toggle between just elevation, then one for roads where they're a solid color like yellow then colored in a separate cmap for elevation then another one for variance. does that make sense? also buildings can look really cool with this ![alt text](<Screenshot 2025-07-18 at 11.49.32 AM.jpg>)
 
 ## Project Goals & TODOs
 
@@ -114,6 +115,13 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **`parameters` prop**: Passes GPU settings to luma.gl — can set `depthTest`, `blend`, etc. Antialiasing options limited by WebGL context.
 - **`coverage`**: Setting to 0.95 adds tiny gaps between hexes, can reduce visual overlap artifacts.
 - **TODO**: Watch lonboard releases for deck.gl version bumps. Consider filing issue with Kyle.
+
+### Lonboard Map Controls in Marimo
+- **Problem**: lonboard's default `controls=(FullscreenControl(), NavigationControl(), ScaleControl())` don't appear in marimo unless explicitly passed. When we added `controls=[FullscreenControl()]` we lost `NavigationControl` (compass, zoom, pitch reset / "go flat") and `ScaleControl` (scale bar).
+- **Fix**: Always pass all three explicitly: `controls=[FullscreenControl(position="top-right"), NavigationControl(), ScaleControl()]`
+- **Import**: `from lonboard.controls import FullscreenControl, NavigationControl, ScaleControl`
+- **`NavigationControl` options**: `show_compass=True`, `show_zoom=True`, `visualize_pitch=True` (all default True)
+- **Applies to all notebooks** — every notebook currently only passes `[fullscreen]`
 
 ### Bbox Picker Tool (TODO)
 - Build a bbox picker as a marimo cell or standalone HTML — replace dependence on finicky boundingbox.klokantech.com

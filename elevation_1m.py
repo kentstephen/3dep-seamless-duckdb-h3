@@ -53,7 +53,7 @@ def _():
     from lonboard import Map, H3HexagonLayer
     from lonboard.colormap import apply_continuous_cmap
     from lonboard.basemap import CartoBasemap, MaplibreBasemap
-    from lonboard.controls import FullscreenControl
+    from lonboard.controls import FullscreenControl, NavigationControl, ScaleControl
 
     import warnings
     warnings.filterwarnings("ignore", message="Dataset has no geotransform", category=UserWarning)
@@ -62,7 +62,10 @@ def _():
         FullscreenControl,
         H3HexagonLayer,
         Map,
+        MaplibreBasemap,
+        NavigationControl,
         Normalize,
+        ScaleControl,
         Path,
         Table,
         Transformer,
@@ -164,9 +167,9 @@ def _(h3):
     # bigger snake
     # bbox= (-110.720835,43.663083,-110.670889,43.703449)
     # Pittsburgh
-    bbox = (-80.056754,40.41697,-79.935838,40.47789)
+    # bbox = (-80.056754,40.41697,-79.935838,40.47789)
     # Bigger Pitt
-    # bbox = (-80.068926,40.388062,-79.914701,40.502822)
+    bbox = (-80.068926,40.388062,-79.914701,40.502822)
     # mount washington
     # bbox= (-71.410315,44.165402,-71.196076,44.377283)
     # Cumberland Gap TN
@@ -175,8 +178,14 @@ def _(h3):
     # bbox = [-119.8017,37.6139,-119.2356,37.9822]
     # Yosemite zoom to village
     # bbox = [-119.748015,37.682027,-119.470209,37.786275]
-    H3_RES = 12
-    DEM_RES = 1
+    # Mobile AL Delta
+    # bbox = (-88.049497,30.777502,-87.859554,31.122158) # 10m
+    # Greenville MS
+    # bbox= [-91.4034,33.0691,-90.8826,33.6213]
+    #Junction City OR
+    # bbox = (-123.310601,44.121821,-123.038009,44.34246)
+    H3_RES = 11
+    DEM_RES = 10
 
     _hex_edge = h3.average_hexagon_edge_length(H3_RES, unit='m')
     _px_per_edge = _hex_edge / DEM_RES
@@ -200,7 +209,10 @@ def _(
     FullscreenControl,
     H3HexagonLayer,
     Map,
+    MaplibreBasemap,
+    NavigationControl,
     Normalize,
+    ScaleControl,
     apply_continuous_cmap,
     bbox,
     mo,
@@ -244,7 +256,7 @@ def _(
 
     _elev_values = np.array(table["metric"].to_pylist())
     _normalizer = Normalize(float(np.min(_elev_values)), float(np.max(_elev_values)))
-    # _normalizer = Normalize(float(np.min(_elev_values)), float(1982.0))
+    # _normalizer = Normalize(float(-0.2), float(0.3))
     _colors = apply_continuous_cmap(_normalizer(_elev_values), LaJolla_20, alpha=1)
 
     layer = H3HexagonLayer(
@@ -263,6 +275,7 @@ def _(
     lng = (bbox[0] + bbox[2]) / 2
     lat = (bbox[1] + bbox[3]) / 2
     fullscreen = FullscreenControl(position="top-right")
+    nav = NavigationControl()
     view_state = {
         "longitude": lng,
         "latitude": lat,
@@ -271,11 +284,11 @@ def _(
         "bearing": 0,
     }
 
-    m = Map(layers=[layer], 
-            view_state=view_state, 
-            basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), 
-            use_device_pixels=2.0,  
-            controls=[fullscreen],
+    m = Map(layers=[layer],
+            view_state=view_state,
+            basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels),
+            use_device_pixels=2.0,
+            controls=[fullscreen, nav, ScaleControl()],
             parameters={"depthTest": True, "blend": True}, 
            )
 
@@ -295,6 +308,7 @@ def _(Normalize, apply_continuous_cmap, cmap_dropdown, layer, np, table):
     # Only re-runs when colormap changes — the expensive part
     _elev_values = np.array(table["metric"].to_pylist())
     _normalizer = Normalize(float(np.min(_elev_values)), float(np.max(_elev_values)))
+    # _normalizer = Normalize(float(-0.5), float(5.0))
     layer.get_fill_color = apply_continuous_cmap(_normalizer(_elev_values), cmap_dropdown.value, alpha=1)
     return
 
