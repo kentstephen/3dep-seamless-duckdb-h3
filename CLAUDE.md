@@ -107,6 +107,19 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **Workaround**: Load DEM with the axis-aligned bbox (required by data service), then clip to actual polygon before H3 aggregation: `dem.rio.clip([shapely_polygon], crs=4326)`
 - Could add a polygon input option to notebooks (GeoJSON text input, or draw-on-map if lonboard adds drawing tools)
 
+### H3 Rendering Quality at High Resolution
+- **Problem**: Visual distortion/artifacts on H3 hexagons at res 12+ with extruded rendering, especially with pitch. `high_precision=True` helps but doesn't fully resolve it.
+- **Tested**: `use_device_pixels=2.0`, `parameters={"depthTest": True, "blend": True}` — marginal improvement
+- **Root cause**: lonboard 0.13 wraps deck.gl's `H3HexagonLayer` which uses instanced drawing. At high res with many hexes, GPU precision limits and instanced approximations cause artifacts. Fused (which Kyle Barron also built) renders cleaner — likely newer deck.gl build or different H3 implementation.
+- **`parameters` prop**: Passes GPU settings to luma.gl — can set `depthTest`, `blend`, etc. Antialiasing options limited by WebGL context.
+- **`coverage`**: Setting to 0.95 adds tiny gaps between hexes, can reduce visual overlap artifacts.
+- **TODO**: Watch lonboard releases for deck.gl version bumps. Consider filing issue with Kyle.
+
+### Bbox Picker Tool (TODO)
+- Build a bbox picker as a marimo cell or standalone HTML — replace dependence on finicky boundingbox.klokantech.com
+- Could use lonboard's `selected_bounds` draw interaction — user draws rectangle on map, outputs `(west, south, east, north)` tuple
+- Or minimal standalone: Leaflet + draw control + text box, ~50 lines HTML
+
 ### Lonboard Raster Layer Option
 - For users who just want a flat DEM visualization (no H3 hexagons), use lonboard's `BitmapLayer` or raster layer directly from the xarray DataArray
 - Skips the entire DuckDB H3 aggregation step — much faster, lower memory

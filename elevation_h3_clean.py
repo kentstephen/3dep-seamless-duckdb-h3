@@ -238,7 +238,7 @@ def _(mo):
 @app.cell
 def _(calculate_resolution_for_h3):
     # Mount Washington, NH — dramatic terrain, reasonable size
-    bbox = [-71.502182, 44.092909, -70.723358, 44.511611]
+    # bbox = [-71.502182, 44.092909, -70.723358, 44.511611]
 
     # Grand Canyon (large — expect ~5M+ hexes at res 11, may take several minutes)
     # bbox = [-113.0606, 35.8461, -111.7165, 36.7665]
@@ -249,8 +249,11 @@ def _(calculate_resolution_for_h3):
     # Pittsfield MA
     # bbox = (-73.352437,42.391465,-73.122745,42.541736)
     # Northest MA Adams Williamstown NA
-    bbox = [-73.262028,42.605008,-73.05417,42.744061]
-
+    # bbox = [-73.262028,42.605008,-73.05417,42.744061]
+    # Bigger NE MA
+    # bbox = [-73.377127,42.543925,-73.004317,42.779824]  # doesnt work for some reason
+    # Cumberland Gap TN
+    bbox = [-83.897935,36.440658,-83.415711,36.756229]
     COLLECTION = "3dep-seamless"
     BAND = "data"
     H3_RES = 11
@@ -297,10 +300,15 @@ def _(
     CartoBasemap,
     FullscreenControl,
     H3HexagonLayer,
+    Imola_20,
+    Imola_20_r,
+    Inferno_20,
+    Inferno_20_r,
     Map,
     Normalize,
     apply_continuous_cmap,
     bbox,
+    colormap_dropdown,
     mo,
     np,
     table,
@@ -309,18 +317,23 @@ def _(
     from palettable.matplotlib import Viridis_20, Viridis_20_r
     from palettable.cartocolors.sequential import Emrld_7, Emrld_7_r
 
-    colormap_dropdown = mo.ui.dropdown(
+
+    cmap_dropdown = mo.ui.dropdown(
         options={
             "LaJolla": LaJolla_20,
             "LaJolla (reversed)": LaJolla_20_r,
             "Bamako": Bamako_20,
             "Bamako (reversed)": Bamako_20_r,
+            "Imola": Imola_20,
+            "Imola (reversed)": Imola_20_r,
             "Viridis": Viridis_20,
             "Viridis (reversed)": Viridis_20_r,
+            "Inferno": Inferno_20,
+            "Inferno (reversed)": Inferno_20_r,
             "Emrld": Emrld_7,
             "Emrld (reversed)": Emrld_7_r,
         },
-        value="LaJolla (reversed)",
+        value="LaJolla",
         label="Colormap",
     )
     elevation_scale_slider = mo.ui.number(
@@ -361,13 +374,7 @@ def _(
 
     _controls = mo.hstack([colormap_dropdown, elevation_scale_slider, opacity_slider, extruded_toggle])
     mo.vstack([m, _controls])
-    return (
-        colormap_dropdown,
-        elevation_scale_slider,
-        extruded_toggle,
-        layer,
-        opacity_slider,
-    )
+    return elevation_scale_slider, extruded_toggle, layer, opacity_slider
 
 
 @app.cell

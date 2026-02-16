@@ -168,9 +168,15 @@ def _(h3):
     # Bigger Pitt
     # bbox = (-80.068926,40.388062,-79.914701,40.502822)
     # mount washington
-    bbox= (-71.410315,44.165402,-71.196076,44.377283)
+    # bbox= (-71.410315,44.165402,-71.196076,44.377283)
+    # Cumberland Gap TN
+    # bbox = [-83.897935,36.440658,-83.415711,36.756229]
+    # Yosemite
+    # bbox = [-119.8017,37.6139,-119.2356,37.9822]
+    # Yosemite zoom to village
+    bbox = [-119.748015,37.682027,-119.470209,37.786275]
     H3_RES = 12
-    DEM_RES = 1
+    DEM_RES = 10 # changed to 10 meter
 
     _hex_edge = h3.average_hexagon_edge_length(H3_RES, unit='m')
     _px_per_edge = _hex_edge / DEM_RES
@@ -201,9 +207,10 @@ def _(
     np,
     table,
 ):
-    from palettable.scientific.sequential import Bamako_20, Bamako_20_r, Imola_20, Imola_20_r, LaJolla_20, LaJolla_20_r
+    from palettable.scientific.sequential import Bamako_20, Bamako_20_r, Imola_20, Imola_20_r, LaJolla_20, LaJolla_20_r, Tokyo_20, Tokyo_20_r
     from palettable.matplotlib import Viridis_20, Viridis_20_r, Inferno_20, Inferno_20_r
     from palettable.cartocolors.sequential import Emrld_7, Emrld_7_r
+    from palettable.cmocean.sequential import Solar_20, Solar_20_r
 
     cmap_dropdown = mo.ui.dropdown(
         options={
@@ -217,6 +224,10 @@ def _(
             "Viridis (reversed)": Viridis_20_r,
             "Inferno": Inferno_20,
             "Inferno (reversed)": Inferno_20_r,
+            "Solar": Solar_20,
+            "Solar_20 (reversed)": Solar_20_r,
+            "Tokyo": Tokyo_20,
+            "Tokyo (reversed)": Tokyo_20_r,
             "Emrld": Emrld_7,
             "Emrld (reversed)": Emrld_7_r,
         },
@@ -224,10 +235,10 @@ def _(
         label="Colormap",
     )
     elevation_scale_input = mo.ui.number(
-        start=0.1, stop=50.0, step=1.0, value=2.5, label="Elevation Scale"
+        start=0.0, stop=20.0, step=0.1, value=1.5, label="Elevation Scale"
     )
     opacity_input = mo.ui.number(
-        start=0.0, stop=1.0, step=0.1, value=1.0, label="Opacity"
+        start=0.0, stop=1.0, step=0.1, value=0.7, label="Opacity"
     )
     extruded_toggle = mo.ui.switch(value=False, label="Extruded")
 
@@ -242,10 +253,11 @@ def _(
         get_fill_color=_colors,
         high_precision=True,
         stroked=False,
+        coverage=1,
         get_elevation=_elev_values,
         extruded=False,
-        elevation_scale=2.5,
-        opacity=1,
+        elevation_scale=1.5,
+        opacity=0.7,
 
     )
     lng = (bbox[0] + bbox[2]) / 2
@@ -259,7 +271,13 @@ def _(
         "bearing": 0,
     }
 
-    m = Map(layers=[layer], view_state=view_state, basemap_style=CartoBasemap.DarkMatterNoLabels, use_device_pixels=True,  controls=[fullscreen])
+    m = Map(layers=[layer], 
+            view_state=view_state, 
+            basemap_style=CartoBasemap.DarkMatterNoLabels, 
+            use_device_pixels=2.0,  
+            controls=[fullscreen],
+            parameters={"depthTest": True, "blend": True}, 
+           )
 
     _layer_controls = mo.hstack([cmap_dropdown, elevation_scale_input, opacity_input, extruded_toggle], justify="start", gap=0.5)
     mo.vstack([m, _layer_controls])
