@@ -38,10 +38,12 @@ def _(mo):
 
 @app.cell
 def _():
+    import sys
+    sys.path.insert(0, "lib")
+
     from pathlib import Path
 
     import numpy as np
-    import pyarrow as pa
     import duckdb
     import h3
     import marimo as mo
@@ -55,6 +57,10 @@ def _():
     from lonboard.basemap import CartoBasemap, MaplibreBasemap
     from lonboard.controls import FullscreenControl, NavigationControl, ScaleControl
 
+    from h3_aggregation import aggregate_to_h3
+
+    duckdb.sql("INSTALL h3 FROM community")
+
     import warnings
     warnings.filterwarnings("ignore", message="Dataset has no geotransform", category=UserWarning)
     return (
@@ -65,28 +71,21 @@ def _():
         MaplibreBasemap,
         NavigationControl,
         Normalize,
-        ScaleControl,
         Path,
+        ScaleControl,
         Table,
         Transformer,
+        aggregate_to_h3,
         apply_continuous_cmap,
-        duckdb,
         h3,
         mo,
         np,
-        pa,
         s3dep,
     )
 
 
 @app.cell
-def _(duckdb):
-    duckdb.sql("INSTALL h3 FROM community")
-    return
-
-
-@app.cell
-def _(Path, Transformer, duckdb, np, pa, s3dep):
+def _(Path, Transformer, s3dep):
     def _reproject_bbox(bbox, src_crs, dst_crs):
         t = Transformer.from_crs(src_crs, dst_crs, always_xy=True)
         west, south = t.transform(bbox[0], bbox[1])
@@ -106,45 +105,7 @@ def _(Path, Transformer, duckdb, np, pa, s3dep):
         print(f"DEM shape: {dem.shape}, CRS: {dem.rio.crs}")
         return dem
 
-
-
-    def get_con():
-        con = duckdb.connect()
-        con.sql("SET memory_limit = '2GB'; LOAD h3;")
-        return con
-
-    def aggregate_to_h3(dem, h3_res):
-        """Flatten DEM to lat/lng/elevation, aggregate to H3 via DuckDB."""
-        crs = str(dem.rio.crs)
-        X, Y = np.meshgrid(dem.x.values, dem.y.values)
-
-        if crs and "4326" not in crs:
-            transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
-            lons, lats = transformer.transform(X.flatten(), Y.flatten())
-        else:
-            lons, lats = X.flatten(), Y.flatten()
-
-        vals = dem.values.flatten()
-        mask = np.isfinite(vals)
-        tile_pa = pa.table({
-            "lat": pa.array(lats[mask], type=pa.float64()),
-            "lng": pa.array(lons[mask], type=pa.float64()),
-            "elevation": pa.array(vals[mask], type=pa.float64()),
-        })
-
-        con = get_con()
-        hex_result = con.sql(f"""
-            SELECT
-                h3_latlng_to_cell_string(lat, lng, {h3_res}) AS hex,
-                AVG(elevation) AS metric
-            FROM tile_pa
-            GROUP BY 1
-        """).fetch_arrow_table()
-        con.close()
-        print(f"H3 hexagons: {len(hex_result):,}")
-        return hex_result
-
-    return aggregate_to_h3, load_dem
+    return (load_dem,)
 
 
 @app.cell
@@ -169,7 +130,7 @@ def _(h3):
     # Pittsburgh
     # bbox = (-80.056754,40.41697,-79.935838,40.47789)
     # Bigger Pitt
-    bbox = (-80.068926,40.388062,-79.914701,40.502822)
+    # bbox = (-80.068926,40.388062,-79.914701,40.502822)
     # mount washington
     # bbox= (-71.410315,44.165402,-71.196076,44.377283)
     # Cumberland Gap TN
@@ -184,6 +145,12 @@ def _(h3):
     # bbox= [-91.4034,33.0691,-90.8826,33.6213]
     #Junction City OR
     # bbox = (-123.310601,44.121821,-123.038009,44.34246)
+    # Albany OR Willamette
+    # bbox = (-123.228474,44.576745,-123.036116,44.692357)
+    # north of yazoo MS
+    # bbox = (-90.515047,32.969768,-90.337682,33.148295)
+    # yazoo again
+    bbox = (-90.5687,32.9534,-90.2251,33.393)
     H3_RES = 11
     DEM_RES = 10
 
@@ -222,12 +189,21 @@ def _(
     from palettable.scientific.sequential import Bamako_20, Bamako_20_r, Imola_20, Imola_20_r, LaJolla_20, LaJolla_20_r, Tokyo_20, Tokyo_20_r
     from palettable.matplotlib import Viridis_20, Viridis_20_r, Inferno_20, Inferno_20_r
     from palettable.cartocolors.sequential import Emrld_7, Emrld_7_r
-    from palettable.cmocean.sequential import Solar_20, Solar_20_r
+    from palettable.cmocean.sequential import Solar_20, Solar_20_r, Dense_20, Dense_20_r, Deep_20, Deep_20_r, Haline_20, Haline_20_r
+    from palettable.lightbartlein.sequential import Blues10_10, Blues10_10_r
 
     cmap_dropdown = mo.ui.dropdown(
         options={
             "LaJolla": LaJolla_20,
             "LaJolla (reversed)": LaJolla_20_r,
+            "Dense": Dense_20,
+            "Dense r": Dense_20_r,
+            "Blues 10": Blues10_10,
+            "Blues 10r": Blues10_10_r,
+            "Deep": Deep_20,
+            "Deep r": Deep_20_r,
+            "Haline": Haline_20,
+            "Haline (reversed)": Haline_20_r,
             "Bamako": Bamako_20,
             "Bamako (reversed)": Bamako_20_r,
             "Imola": Imola_20,
@@ -237,7 +213,7 @@ def _(
             "Inferno": Inferno_20,
             "Inferno (reversed)": Inferno_20_r,
             "Solar": Solar_20,
-            "Solar_20 (reversed)": Solar_20_r,
+            "Solar (reversed)": Solar_20_r,
             "Tokyo": Tokyo_20,
             "Tokyo (reversed)": Tokyo_20_r,
             "Emrld": Emrld_7,
@@ -289,7 +265,7 @@ def _(
             basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels),
             use_device_pixels=2.0,
             controls=[fullscreen, nav, ScaleControl()],
-            parameters={"depthTest": True, "blend": True}, 
+            parameters={"depthTest": True, "blend": True},
            )
 
     _layer_controls = mo.hstack([cmap_dropdown, elevation_scale_input, opacity_input, extruded_toggle], justify="start", gap=0.5)

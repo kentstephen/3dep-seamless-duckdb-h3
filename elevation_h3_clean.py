@@ -21,7 +21,7 @@
 import marimo
 
 __generated_with = "0.19.11"
-app = marimo.App(width="medium")
+app = marimo.App(width="full")
 
 
 @app.cell
@@ -65,9 +65,9 @@ def _():
         FullscreenControl,
         H3HexagonLayer,
         Map,
+        MaplibreBasemap,
         NavigationControl,
         Normalize,
-        ScaleControl,
         Table,
         ThreadPoolExecutor,
         Transformer,
@@ -255,13 +255,27 @@ def _(calculate_resolution_for_h3):
     # Bigger NE MA
     # bbox = [-73.377127,42.543925,-73.004317,42.779824]  # doesnt work for some reason
     # Cumberland Gap TN
-    bbox = [-83.897935,36.440658,-83.415711,36.756229]
+    # bbox = [-83.897935,36.440658,-83.415711,36.756229]
+    # north of yazoo MS
+    # bbox = (-90.515047,32.969768,-90.337682,33.148295)
+    # yazoo again
+    # bbox = (-90.5485,32.8363,-90.1926,33.4235)
+    # Yazoo Again bbox expanded north
+    bbox = (-90.5485,32.8363,-90.1405,33.5821)
+    # Mobile AL Delta
+    # bbox = (-88.0505,30.7153,-87.8339,31.2291)
+    #  Mobile Delta more north smaller 
+    # bbox = (-88.2362,31.1228,-87.4107,31.6514)
+    # mobile tenesaw smaller still
+    # bbox= (-88.031,31.0178,-87.85,31.2445)
+    # new mobile tight for 12
+    # bbox = (-88.00979,31.083203,-87.799613,31.307668)
     COLLECTION = "3dep-seamless"
     BAND = "data"
     H3_RES = 11
     NATIVE_RESOLUTION = 10
     RESOLUTION = calculate_resolution_for_h3(H3_RES, NATIVE_RESOLUTION)
-    TILE_ZOOM = 12
+    TILE_ZOOM = 11
     MAX_WORKERS = 8
     return BAND, COLLECTION, H3_RES, MAX_WORKERS, RESOLUTION, TILE_ZOOM, bbox
 
@@ -289,7 +303,7 @@ def _(
     return (table,)
 
 
-@app.cell(hide_code=True)
+@app.cell(disabled=True, hide_code=True)
 def _(mo):
     mo.md(r"""
     I'm accessing colormaps via `palettable` [you can find more here](https://jiffyclub.github.io/palettable/). You just have to follow the import path conventions, I have some examples below.
@@ -302,30 +316,43 @@ def _(
     CartoBasemap,
     FullscreenControl,
     H3HexagonLayer,
-    Imola_20,
-    NavigationControl,
-    ScaleControl,
-    Imola_20_r,
-    Inferno_20,
-    Inferno_20_r,
     Map,
+    MaplibreBasemap,
+    NavigationControl,
     Normalize,
     apply_continuous_cmap,
     bbox,
-    colormap_dropdown,
     mo,
     np,
     table,
 ):
-    from palettable.scientific.sequential import Bamako_20, Bamako_20_r, LaJolla_20, LaJolla_20_r
-    from palettable.matplotlib import Viridis_20, Viridis_20_r
+    from palettable.scientific.sequential import Bamako_20, Bamako_20_r, Imola_20, Imola_20_r, LaJolla_20, LaJolla_20_r, Tokyo_20, Tokyo_20_r
+    from palettable.scientific.diverging import Roma_20, Roma_20_r
+    from palettable.matplotlib import Viridis_20, Viridis_20_r, Inferno_20, Inferno_20_r
     from palettable.cartocolors.sequential import Emrld_7, Emrld_7_r
-
+    from palettable.cmocean.sequential import Solar_20, Solar_20_r, Dense_20, Dense_20_r, Deep_20, Deep_20_r, Speed_20, Speed_20_r, Ice_20, Ice_20_r
+    from palettable.mycarta import CubeYF_20, CubeYF_20_r
+    from palettable.lightbartlein.sequential import Blues10_10, Blues10_10_r
 
     cmap_dropdown = mo.ui.dropdown(
         options={
             "LaJolla": LaJolla_20,
             "LaJolla (reversed)": LaJolla_20_r,
+            "Dense": Dense_20,
+            "Dense r": Dense_20_r,
+            "Blues 10": Blues10_10,
+            "Blues 10r": Blues10_10_r,
+            "Deep": Deep_20,
+            "Deep r":Deep_20_r,
+            "Speed": Speed_20,
+            "Speed r": Speed_20_r,
+            "Ice": Ice_20,
+            "Ice r": Ice_20_r,
+            "Roma": Roma_20,
+            "Roma r":Roma_20_r,
+
+            # "CubeYF": CubeYF_20,
+            # "CubeYF (reversed)": CubeYF_20_r,
             "Bamako": Bamako_20,
             "Bamako (reversed)": Bamako_20_r,
             "Imola": Imola_20,
@@ -334,6 +361,10 @@ def _(
             "Viridis (reversed)": Viridis_20_r,
             "Inferno": Inferno_20,
             "Inferno (reversed)": Inferno_20_r,
+            "Solar": Solar_20,
+            "Solar_20 (reversed)": Solar_20_r,
+            "Tokyo": Tokyo_20,
+            "Tokyo (reversed)": Tokyo_20_r,
             "Emrld": Emrld_7,
             "Emrld (reversed)": Emrld_7_r,
         },
@@ -344,9 +375,9 @@ def _(
         start=0.1, stop=20.0, step=0.1, value=3.4, label="Elevation Scale"
     )
     opacity_slider = mo.ui.number(
-        start=0.0, stop=1.0, step=0.05, value=0.9, label="Opacity"
+        start=0.0, stop=1.0, step=0.05, value=1.0, label="Opacity"
     )
-    extruded_toggle = mo.ui.switch(value=True, label="Extruded")
+    extruded_toggle = mo.ui.switch(value=False, label="Extruded")
 
     _elev_values = np.array(table["metric"].to_pylist())
     _normalizer = Normalize(_elev_values.min(), _elev_values.max())
@@ -375,18 +406,29 @@ def _(
         "bearing": 20,
     }
 
-    m = Map(layers=[layer], view_state=view_state, basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), controls=[fullscreen, nav, ScaleControl()])
+    m = Map(layers=[layer], 
+            view_state=view_state, 
+            basemap=MaplibreBasemap(style=CartoBasemap.DarkMatterNoLabels), 
+            # basemap=MaplibreBasemap(style=CartoBasemap.DarkMatter), 
+            controls=[fullscreen , nav,] # ScaleControl()]
+    )
 
-    _controls = mo.hstack([colormap_dropdown, elevation_scale_slider, opacity_slider, extruded_toggle])
+    _controls = mo.hstack([cmap_dropdown, elevation_scale_slider, opacity_slider, extruded_toggle])
     mo.vstack([m, _controls])
-    return elevation_scale_slider, extruded_toggle, layer, opacity_slider
+    return (
+        cmap_dropdown,
+        elevation_scale_slider,
+        extruded_toggle,
+        layer,
+        opacity_slider,
+    )
 
 
 @app.cell
 def _(
     Normalize,
     apply_continuous_cmap,
-    colormap_dropdown,
+    cmap_dropdown,
     elevation_scale_slider,
     extruded_toggle,
     layer,
@@ -396,9 +438,9 @@ def _(
 ):
     # Trait updates — modifies layer in-place without re-creating the map
     _elev_values = np.array(table["metric"].to_pylist())
-    _normalizer = Normalize(_elev_values.min(), _elev_values.max())
-
-    layer.get_fill_color = apply_continuous_cmap(_normalizer(_elev_values), colormap_dropdown.value, alpha=1)
+    # _normalizer = Normalize(_elev_values.min(), _elev_values.max())
+    _normalizer = Normalize(29, 50)
+    layer.get_fill_color = apply_continuous_cmap(_normalizer(_elev_values), cmap_dropdown.value, alpha=1)
     layer.elevation_scale = elevation_scale_slider.value
     layer.opacity = opacity_slider.value
     layer.extruded = extruded_toggle.value

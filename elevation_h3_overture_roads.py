@@ -44,21 +44,15 @@ def _(mo):
 
 @app.cell
 def _():
-    import numpy as np
-    import pyarrow as pa
-    import duckdb
-    import morecantile
-    import h3
-    import odc.stac
-    import planetary_computer
-    import pystac_client
-    import marimo as mo
-    import geopandas as gpd
-    import shapely
     import sys
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    sys.path.insert(0, "lib")
+    sys.path.insert(0, "refrences")
+
+    import numpy as np
+    import duckdb
+    import geopandas as gpd
+    import marimo as mo
     from matplotlib.colors import Normalize
-    from pyproj import Transformer
     from arro3.core import Table
 
     from lonboard import Map, H3HexagonLayer
@@ -66,8 +60,11 @@ def _():
     from lonboard.basemap import CartoBasemap, MaplibreBasemap
     from lonboard.controls import FullscreenControl, NavigationControl, ScaleControl
 
-    sys.path.insert(0, "refrences")
+    from pipeline import calculate_resolution_for_h3, query_stac, get_tiles, install_h3, get_con, process_all_tiles
     from overture_core_segments_to_hex import get_store, load_geoarrow
+
+    install_h3()
+    duckdb.sql("INSTALL spatial")
 
     import warnings
     warnings.filterwarnings("ignore", message="Dataset has no geotransform", category=UserWarning)
@@ -79,162 +76,24 @@ def _():
         MaplibreBasemap,
         NavigationControl,
         Normalize,
-        ScaleControl,
         Table,
-        ThreadPoolExecutor,
-        Transformer,
         apply_continuous_cmap,
-        as_completed,
+        calculate_resolution_for_h3,
         duckdb,
+        get_con,
         get_store,
+        get_tiles,
         gpd,
-        h3,
         load_geoarrow,
         mo,
-        morecantile,
         np,
-        pa,
-        planetary_computer,
-        pystac_client,
+        process_all_tiles,
+        query_stac,
     )
 
 
 @app.cell
-def _(
-    ThreadPoolExecutor,
-    Transformer,
-    as_completed,
-    duckdb,
-    get_store,
-    gpd,
-    h3,
-    load_geoarrow,
-    morecantile,
-    np,
-    pa,
-    planetary_computer,
-    pystac_client,
-):
-    def calculate_resolution_for_h3(h3_res, native_resolution=10, pixels_per_hex_edge=6):
-        """Calculate odc-stac resolution to get ~pixels_per_hex_edge pixels per H3 hex edge."""
-        hex_edge_m = h3.average_hexagon_edge_length(h3_res, unit='m')
-        target = hex_edge_m / pixels_per_hex_edge
-        resolution = max(round(target / native_resolution) * native_resolution, native_resolution)
-        px_per_edge = hex_edge_m / resolution
-        print(f"H3 res {h3_res}: hex edge {hex_edge_m:.0f}m, resolution {resolution}m, {px_per_edge:.1f} px/edge")
-        return resolution
-
-    def query_stac(bbox, collection):
-        """Query Planetary Computer STAC catalog for items covering bbox."""
-        catalog = pystac_client.Client.open(
-            "https://planetarycomputer.microsoft.com/api/stac/v1",
-            modifier=planetary_computer.sign_inplace,
-        )
-        items = catalog.search(
-            collections=[collection],
-            bbox=bbox,
-            query={"gsd": {"eq": 10}}
-        ).item_collection()
-        print(f"Found {len(items)} STAC items")
-        return items
-
-    def get_tiles(bbox, zoom):
-        """Split bbox into morecantile tiles at given zoom level."""
-        tms = morecantile.tms.get("WebMercatorQuad")
-        tiles = list(tms.tiles(*bbox, zooms=[zoom]))
-        print(f"{len(tiles)} tiles at zoom {zoom}")
-        return tiles, tms
-
-    duckdb.sql("INSTALL h3 FROM community; INSTALL spatial;")
-
-    def get_con():
-        """In-memory connection for workers. LOAD only, no INSTALL."""
-        con = duckdb.connect()
-        con.sql("""
-            SET temp_directory = './tmp';
-            SET memory_limit = '512MB';
-            LOAD spatial;
-            LOAD h3;
-            CALL register_geoarrow_extensions();
-        """)
-        return con
-
-    def process_tile_to_h3(tile, tms, items, band, h3_res, resolution):
-        """Load one tile's DEM, reproject to 4326, aggregate to H3."""
-        tile_bounds = tms.bounds(tile)
-        tile_bbox = [tile_bounds.left, tile_bounds.bottom, tile_bounds.right, tile_bounds.top]
-        transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-
-        try:
-            import odc.stac
-            ds = odc.stac.load(
-                items,
-                crs="EPSG:3857",
-                resolution=resolution,
-                bands=[band],
-                bbox=tile_bbox,
-            ).astype(float)
-        except Exception:
-            return None
-
-        arr = ds[band].max(dim="time")
-        vals = arr.values
-        x_coords = arr.coords["x"].values
-        y_coords = arr.coords["y"].values
-        X, Y = np.meshgrid(x_coords, y_coords)
-        lons, lats = transformer.transform(X.flatten(), Y.flatten())
-
-        tile_pa = pa.table({
-            "lat": pa.array(lats, type=pa.float64()),
-            "lng": pa.array(lons, type=pa.float64()),
-            "elevation": pa.array(vals.flatten(), type=pa.float64()),
-        })
-
-        con = get_con()
-        result = con.sql(f"""
-            SELECT
-                h3_latlng_to_cell(lat, lng, {h3_res}) AS hex,
-                AVG(elevation) AS metric
-            FROM tile_pa
-            GROUP BY 1
-        """).fetch_arrow_table()
-        return result
-
-    def process_all_tiles(items, tiles, tms, band, h3_res, resolution, max_workers=4):
-        """Process all tiles concurrently, then merge edge hexagons."""
-        batches = []
-        completed = 0
-        total = len(tiles)
-
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(process_tile_to_h3, tile, tms, items, band, h3_res, resolution): tile
-                for tile in tiles
-            }
-            for future in as_completed(futures):
-                result = future.result()
-                if result is not None and len(result) > 0:
-                    batches.append(result)
-                completed += 1
-                if completed % 100 == 0 or completed == total:
-                    print(f"  Processed {completed}/{total} tiles")
-
-        if not batches:
-            raise RuntimeError("No tiles produced data")
-
-        combined = pa.concat_tables(batches)
-        print(f"Pre-merge hex count: {len(combined):,}")
-
-        con = duckdb.connect()
-        hex_result = con.sql("""
-            SELECT hex, AVG(metric) AS metric
-            FROM combined
-            GROUP BY 1
-        """).fetch_arrow_table()
-        con.close()
-        print(f"Final H3 hexagons: {len(hex_result):,}")
-        return hex_result
-
+def _(duckdb, get_con, get_store, gpd, load_geoarrow):
     def load_road_hexes(bbox, h3_res):
         """Load Overture segments, buffer 100m, polyfill to H3."""
         store = get_store()
@@ -253,7 +112,7 @@ def _(
         gdf_arrow= gdf.to_arrow()
 
         # Polyfill buffered polygons to H3
-        con = get_con()
+        con = get_con(extensions=("spatial", "h3"))
         road_hexes = con.sql(f"""
             WITH to_cells AS (
                 SELECT unnest(h3_polygon_wkt_to_cells(ST_AsText(geometry), {h3_res})) AS hex
@@ -279,14 +138,7 @@ def _(
         print(f"Masked elevation hexagons (near roads): {len(masked):,}")
         return masked
 
-    return (
-        calculate_resolution_for_h3,
-        get_tiles,
-        load_road_hexes,
-        mask_elevation_with_roads,
-        process_all_tiles,
-        query_stac,
-    )
+    return load_road_hexes, mask_elevation_with_roads
 
 
 @app.cell
@@ -377,18 +229,36 @@ def _(
     np,
     table,
 ):
-    from palettable.scientific.sequential import Bamako_20, Bamako_20_r, LaJolla_20, LaJolla_20_r
-    from palettable.matplotlib import Viridis_20, Viridis_20_r
+    from palettable.scientific.sequential import Bamako_20, Bamako_20_r, Imola_20, Imola_20_r, LaJolla_20, LaJolla_20_r, Tokyo_20, Tokyo_20_r
+    from palettable.matplotlib import Viridis_20, Viridis_20_r, Inferno_20, Inferno_20_r
     from palettable.cartocolors.sequential import Emrld_7, Emrld_7_r
+    from palettable.cmocean.sequential import Solar_20, Solar_20_r, Dense_20, Dense_20_r, Deep_20, Deep_20_r, Haline_20, Haline_20_r
+    from palettable.lightbartlein.sequential import Blues10_10, Blues10_10_r
 
     colormap_dropdown = mo.ui.dropdown(
         options={
             "LaJolla": LaJolla_20,
             "LaJolla (reversed)": LaJolla_20_r,
+            "Dense": Dense_20,
+            "Dense r": Dense_20_r,
+            "Blues 10": Blues10_10,
+            "Blues 10r": Blues10_10_r,
+            "Deep": Deep_20,
+            "Deep r": Deep_20_r,
+            "Haline": Haline_20,
+            "Haline (reversed)": Haline_20_r,
             "Bamako": Bamako_20,
             "Bamako (reversed)": Bamako_20_r,
+            "Imola": Imola_20,
+            "Imola (reversed)": Imola_20_r,
             "Viridis": Viridis_20,
             "Viridis (reversed)": Viridis_20_r,
+            "Inferno": Inferno_20,
+            "Inferno (reversed)": Inferno_20_r,
+            "Solar": Solar_20,
+            "Solar (reversed)": Solar_20_r,
+            "Tokyo": Tokyo_20,
+            "Tokyo (reversed)": Tokyo_20_r,
             "Emrld": Emrld_7,
             "Emrld (reversed)": Emrld_7_r,
         },
@@ -448,18 +318,20 @@ def _(
     Normalize,
     apply_continuous_cmap,
     colormap_dropdown,
-    elevation_scale_slider,
-    extruded_toggle,
     layer,
     np,
-    opacity_slider,
     table,
 ):
-    # Trait updates — modifies layer in-place without re-creating the map
+    # Colormap updates only — re-runs when colormap_dropdown changes
     _elev_values = np.array(table["metric"].to_pylist())
     _normalizer = Normalize(_elev_values.min(), _elev_values.max())
-
     layer.get_fill_color = apply_continuous_cmap(_normalizer(_elev_values), colormap_dropdown.value, alpha=1)
+    return
+
+
+@app.cell
+def _(elevation_scale_slider, extruded_toggle, layer, opacity_slider):
+    # Scalar trait updates only — instant, no array recomputation
     layer.elevation_scale = elevation_scale_slider.value
     layer.opacity = opacity_slider.value
     layer.extruded = extruded_toggle.value

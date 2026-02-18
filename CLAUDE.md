@@ -57,7 +57,7 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **`new_schema_for_ept_duckdb_h3.ipynb`** - Shows mercantile tile-based parallel processing with DuckDB, two-stage H3 aggregation, and multiple lonboard layers.
 - **`landsat_vegetation_change_h3.ipynb`** - Shows memory-efficient streaming (process per-year, aggregate immediately to H3), DuckDB persistence, and linked map views.
 - **`overture_core.py`** - Shared Overture Maps data functions (from lidar-h3-notebooks). GeoParquet loading via `obstore` + `geoarrow-rust`, geometry type splitting, lonboard layer building. Reference for Overture building/infrastructure joins.
- -- hey claude it's stephen, with this new notebook elevation_h3_overture_roads.py you made i think  you misunderstood me i want to see the 3d motorways with the dem not just highways it looks insane. this is what i was going for, sentinel-2 broken up into hexagons but with overture motorways ![alt text](<Screenshot 2025-05-01 at 9.05.18 PM.png>) the s2 would be fun with the dem at some point but maybe thats more a LPC thing, the trick with the roads is elevation but also variance which is easy with h3. reformat as a TODO and 100 meters is far too wide a buffer for this aoi. i want the layers set up like in here refrences/landsat_vegetation_change_h3.ipynb so i can toggle between just elevation, then one for roads where they're a solid color like yellow then colored in a separate cmap for elevation then another one for variance. does that make sense? also buildings can look really cool with this ![alt text](<Screenshot 2025-07-18 at 11.49.32 AM.jpg>)
+
 
 ## Project Goals & TODOs
 
@@ -78,9 +78,30 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 - **Notebook**: `elevation_h3_clean_with_fused_census.py` — extends `elevation_h3_clean.py` with a second DuckDB query for census data and a second H3HexagonLayer.
 
 ### Overture + H3 Elevation Joins
-- Join Overture buildings to H3 elevation hexes using `h3_polygon_wkt_to_cells_experimental` — convert building footprint polygons to H3 cell sets, then join on hex index to get elevation per building
 - Use DEM-derived H3 elevation as a lightweight alternative to lidar — easier to acquire, covers CONUS via 3DEP seamless
+- `h3_polygon_wkt_to_cells_experimental` in DuckDB for polygon-to-H3 polyfill (buildings, road buffers)
 - See `refrences/overture_core.py` for Overture data loading patterns (obstore + geoarrow-rust + GeoParquet)
+
+#### Overture Road Segments (`elevation_h3_overture_roads.py`)
+- Filter to **motorways** (not just highways) — 3D motorways with the DEM looks insane
+- 100m buffer is far too wide for this AOI — reduce significantly
+- The trick with roads is **elevation + variance** — both are natural H3 aggregation stats (segment polyfill → H3 → join with DEM elevation)
+- Layer setup modeled on `refrences/landsat_vegetation_change_h3.ipynb` with toggleable layers:
+  1. Elevation only (full DEM H3)
+  2. Roads as solid color (e.g. yellow) over elevation
+  3. Roads colored by elevation cmap
+  4. Roads colored by variance cmap
+- Aspiration ref: `Screenshot 2025-05-01 at 9.05.18 PM.png` — S2 hexagons with Overture motorways
+
+#### Overture Buildings
+- Ref: `Screenshot 2025-07-18 at 11.49.32 AM.jpg` — flat buildings with vivid color
+- **H3 polyfill join**: `h3_polygon_wkt_to_cells` with 'center' or 'overlap' mode to polyfill building footprints → join with elevation H3 → smooth color gradient across buildings
+- **Geometry overlay**: Keep actual Overture building polygons, join elevation via H3, render as SolidPolygonLayer on top of H3HexagonLayer — preserves building shapes
+- **3D extrusion**: Use Overture `height` attribute to extrude buildings off the extruded H3 elevation surface — mixed results on Fused.io with their deck.gl, worth testing in lonboard. Flat color is more vivid; 3D is the stretch goal
+
+#### Sentinel-2 + DEM (future)
+- S2 broken into hexagons with Overture motorways — the original aspiration from the screenshot
+- More of an LPC thing; the DEM version is current focus
 
 ### River REMs (Relative Elevation Models)
 - **Goal**: Programmatic floodplain visualization — detrend a DEM relative to the river water surface so values represent height above river level
@@ -148,7 +169,7 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 
 ### 1m DEM from USGS
 - **Working**: `s3dep.get_map("DEM", bbox, save_dir, res=1)` pulls 1m data from USGS ArcGIS export service. Tested on Carson River NV, Snake River WY, Pittsburgh PA.
-- **Known issue**: USGS ArcGIS endpoint times out on larger bboxes or under load. `seamless-3dep` uses `tiny_retriever` which fires concurrent requests with no retry. Connection timeouts are common for ~0.2°×0.2° bboxes at 1m.
+- **Known issue**: USGS ArcGIS endpoint times out on larger bboxes or under load. `seamless-3dep` uses `tiny_retriever` which fires concurrent requests with no retry. Connection timeouts are common for ~0.2degx0.2deg bboxes at 1m.
 - **Workaround**: Retry, or use a smaller bbox. The service is variable — same bbox may work later.
 - **Better path (future)**: Direct S3 COG reads from `s3://prd-tnm/StagedProducts/Elevation/1m/Projects/` — bypasses ArcGIS entirely. Needs tile discovery (TNM API or STAC). Also watch USGS S1M (Seamless 1m) product rollout.
 - **Notebook**: `elevation_1m.py` on branch `feature/river-rem-1m`
@@ -173,57 +194,3 @@ DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community
 
 - Always create a new branch for every feature
 - Update plans and discourse in this file when making progress
-
-# Note from Stephen, we should look at refrences/rem.ipynb from https://github.com/hyriver/HyRiver-examples/blob/main/notebooks/ when we start up again
-## also, we had this runnning with hyriver's tooling today, now it's broken again 
-```DEM shape: (647, 1295), CRS: EPSG:4269
-<xarray.DataArray (y: 647, x: 1295)> Size: 3MB
-array([[1559.0302, 1563.4066, 1565.601 , ..., 1362.3987, 1361.4998,
-        1360.7252],
-       [1556.7375, 1560.5084, 1562.8693, ..., 1360.0778, 1359.2538,
-        1358.2104],
-       [1558.328 , 1555.6216, 1557.7102, ..., 1357.6361, 1356.847 ,
-        1355.7034],
-       ...,
-       [1327.268 , 1327.1348, 1326.977 , ..., 1741.7252, 1740.5656,
-        1739.8575],
-       [1327.3658, 1327.1628, 1326.9523, ..., 1742.2513, 1741.0785,
-        1740.1276],
-       [1327.1184, 1326.9799, 1326.9714, ..., 1743.0371, 1742.1914,
-        1741.1156]], shape=(647, 1295), dtype=float32)
-Coordinates:
-  * y            (y) float64 5kB 39.3 39.3 39.3 39.3 ... 39.24 39.24 39.24 39.24
-  * x            (x) float64 10kB -119.6 -119.6 -119.6 ... -119.5 -119.5 -119.5
-    spatial_ref  int64 8B 0
-Attributes:
-    AREA_OR_POINT:  Area
-    scale_factor:   1.0
-    add_offset:     0.0
-    _FillValue:     nan
-Main stem: 2 segments
-
-Traceback (most recent call last):
-  File "/var/folders/7c/sjv2kprs3qs3x738ldnw1b040000gn/T/marimo_32823/__marimo__cell_PKri_.py", line 3, in <module>
-    river_line = get_flowlines(bbox, dem.rio.crs)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/var/folders/7c/sjv2kprs3qs3x738ldnw1b040000gn/T/marimo_32823/__marimo__cell_vblA_.py", line 33, in get_flowlines
-    river_line = geoutils.smooth_linestring(merged, 0.1, npts)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/pygeoutils/smoothing.py", line 463, in smooth_linestring
-    return LineString(np.c_[spl_x(konts), spl_y(konts)])
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/geometry/linestring.py", line 76, in __new__
-    geom = shapely.linestrings(coordinates)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/decorators.py", line 173, in wrapper
-    result = func(*args, **kwargs)
-             ^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/decorators.py", line 88, in wrapped
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/stephenk/.cache/uv/archive-v0/aDw4ZvBhGsQTQHvyzsZsX/lib/python3.11/site-packages/shapely/creation.py", line 218, in linestrings
-    return lib.linestrings(coords, np.intc(handle_nan), out=out, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-shapely.errors.GEOSException: IllegalArgumentException: point array must contain 0 or >1 elements
-
-```
