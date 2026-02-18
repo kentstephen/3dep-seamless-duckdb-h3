@@ -34,7 +34,30 @@ Key libraries: `pystac-client`, `planetary-computer`, `odc-stac`, `duckdb` (H3 e
 
 Arrow tables are used as the interchange format between DuckDB and lonboard (zero-copy).
 
-DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community")`), then each worker connection only does `LOAD h3`. See `get_con()` pattern in `elevation_h3_v3.ipynb` and `refrences/new_schema_for_ept_duckdb_h3.ipynb`.
+DuckDB extensions: install once globally (`duckdb.sql("INSTALL h3 FROM community")`), then each worker connection only does `LOAD h3`. See `get_con()` pattern in `lib/pipeline.py`.
+
+### Shared Modules (`lib/`)
+
+Shared pipeline functions live in `lib/` to avoid copy-paste across notebooks:
+
+- **`lib/pipeline.py`** — STAC query, morecantile tiling, concurrent tile processing (`calculate_resolution_for_h3`, `query_stac`, `get_tiles`, `install_h3`, `get_con`, `process_tile_to_h3`, `process_all_tiles`). All heavy imports inside function bodies.
+- **`lib/h3_aggregation.py`** — `aggregate_to_h3(data_array, h3_res, value_column, memory_limit)` — flattens xarray DataArray to lat/lng/value, aggregates to H3 via DuckDB. Handles CRS detection/reprojection. Replaces both `aggregate_to_h3` and `aggregate_rem_to_h3`.
+- **`lib/rem.py`** — `get_flowlines`, `sample_river_elevation`, `compute_rem`. HyRiver-style IDW REM with UTM projection fix for smoothing.
+
+Import pattern (notebooks add `lib/` to sys.path):
+```python
+import sys
+sys.path.insert(0, "lib")
+from pipeline import calculate_resolution_for_h3, query_stac, get_tiles, install_h3, process_all_tiles
+```
+
+### Responsive Map Controls (Split Trait Cells)
+
+Trait update cells are split into two for responsive controls:
+- **Cell A (colormap)** — re-runs when `cmap_dropdown` (or `rem_max_input` for REM) changes. Recomputes the color array.
+- **Cell B (scalar traits)** — re-runs when `elevation_scale_input`, `opacity_input`, or `extruded_toggle` changes. Instant, no array recomputation.
+
+This prevents the expensive colormap recomputation when you just want to tweak elevation scale or opacity.
 
 ### Resolution / H3 Relationship
 
