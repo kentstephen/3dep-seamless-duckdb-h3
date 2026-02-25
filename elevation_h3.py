@@ -209,7 +209,7 @@ def _(H3_RES, duckdb):
     con.sql("INSTALL h3 FROM community; LOAD h3;")
     query = f"""
         SELECT
-            h3_latlng_to_cell_string(lat, lng, {H3_RES}) AS hex,
+            h3_latlng_to_cell(lat, lng, {H3_RES}) AS hex,
             AVG(elevation) AS metric,
             --COUNT(1) AS pixel_count
         FROM pixels_table

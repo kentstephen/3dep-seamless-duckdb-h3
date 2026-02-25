@@ -25,7 +25,7 @@ STAC Query (Planetary Computer)
 - **Concurrent tile processing** — `ThreadPoolExecutor` processes morecantile tiles in parallel with per-tile H3 aggregation, then merges edge hexagons
 - **Resolution-aware COG reads** — automatically calculates pixel resolution to match H3 hex size, leveraging COG internal overviews for less I/O
 - **Zero-copy Arrow interchange** — DuckDB outputs Arrow tables consumed directly by lonboard via `arro3`
-- **DuckDB H3 extension** — all spatial binning happens in SQL (`h3_latlng_to_cell_string`, `GROUP BY`, `AVG`)
+- **DuckDB H3 extension** — all spatial binning happens in SQL (`h3_latlng_to_cell`, `GROUP BY`, `AVG`)
 - **Fullscreen map control** — lonboard map includes a fullscreen toggle for immersive 3D exploration
 
 ## Running

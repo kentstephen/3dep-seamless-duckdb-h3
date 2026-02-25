@@ -174,7 +174,7 @@ def _(
         con = get_con()
         result = con.sql(f"""
             SELECT
-                h3_latlng_to_cell_string(lat, lng, {h3_res}) AS hex,
+                h3_latlng_to_cell(lat, lng, {h3_res}) AS hex,
                 AVG(elevation) AS metric
             FROM tile_pa
             GROUP BY 1
