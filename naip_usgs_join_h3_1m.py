@@ -12,6 +12,7 @@
 #     "pystac-client==0.9.0",
 #     "rioxarray>=0.15.0",
 #     "seamless-3dep",
+#     "shapely==2.1.2",
 #     "sqlglot",
 # ]
 # ///
@@ -52,6 +53,8 @@ def _():
     import numpy as np
     import pyarrow as pa
     import duckdb
+    import rioxarray  # noqa: F401 — registers .rio accessor
+    import shapely
     import planetary_computer
     import pystac_client
     import marimo as mo
@@ -142,10 +145,10 @@ def _(
     def process_naip_item_to_h3(item, bbox, h3_res):
         """Load one NAIP quad at native 60cm, aggregate RGB to H3. Returns arrow table or None."""
         try:
-            import rioxarray  # noqa: F401
+            import rioxarray as rxr
 
             # overview_level=0 = native 60cm
-            da = rioxarray.open_rasterio(item.assets["image"].href, overview_level=0)
+            da = rxr.open_rasterio(item.assets["image"].href, overview_level=0)
             rgb = da.sel(band=[1, 2, 3]).astype(float)
 
             west, south, east, north = bbox
@@ -218,12 +221,7 @@ def _(
         print(f"NAIP cache: {len(naip_cache):,} hexagons")
         return naip_cache
 
-    return (
-        deduplicate_naip_items,
-        get_con,
-        process_all_naip_items,
-        query_naip,
-    )
+    return deduplicate_naip_items, process_all_naip_items, query_naip
 
 
 @app.cell
@@ -258,7 +256,7 @@ def _():
     # bbox = (-71.876086,44.107368,-71.58563,44.324113)
 
     # Cathedral Ledge - Conway, NH
-    bbox = (-71.182824, 44.051446, -71.143571, 44.078063)
+    bbox = (-71.196834,44.046417,-71.151728,44.081825)
 
     MAX_WORKERS = 8
     NAIP_DATETIME = "2019-01-01/2022-12-31"
@@ -279,7 +277,7 @@ def _(
     # SLOW — runs once per bbox/H3_RES change.
     _items = deduplicate_naip_items(query_naip(bbox, NAIP_DATETIME))
     naip_cache = process_all_naip_items(_items, bbox, H3_RES, max_workers=MAX_WORKERS)
-    return (naip_cache,)
+    return
 
 
 @app.cell
@@ -288,11 +286,11 @@ def _(H3_RES, aggregate_to_h3, bbox, load_dem):
     _dem = load_dem(bbox, res=1)
     elev_cache = aggregate_to_h3(_dem, H3_RES)
     del _dem
-    return (elev_cache,)
+    return
 
 
 @app.cell
-def _(Table, duckdb, elev_cache, naip_cache, np):
+def _(Table, duckdb, np):
     _con = duckdb.connect()
     _joined = _con.sql("""
         SELECT n.hex, n.r, n.g, n.b, e.metric AS elevation
