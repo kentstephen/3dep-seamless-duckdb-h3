@@ -5,7 +5,7 @@
 #     "h3>=4.0.0",
 #     "lonboard==0.13.0",
 #     "marimo",
-#     "numpy==2.2.0",
+#     "numpy==2.4.4",
 #     "planetary-computer==1.0.0",
 #     "pyarrow==18.1.0",
 #     "pyproj==3.7.2",
@@ -111,7 +111,7 @@ def _(
         con = duckdb.connect()
         con.sql("""
             SET temp_directory = './tmp';
-            SET memory_limit = '768MB';
+            SET memory_limit = '1GB';
             LOAD h3;
         """)
         return con
@@ -249,6 +249,20 @@ def _():
     # Zion NP
     # bbox = (-113.1478, 37.0926, -112.7502, 37.4311)
 
+    # Zion NP reduced
+    # bbox = (-113.064963,37.176314,-112.903574,37.332624)
+
+    # Devil's Tower
+    # bbox = (-104.720703,44.586741,-104.709301,44.594649)
+
+    # Yosemite Valley
+    # bbox = (-119.61618,37.719767,-119.552052,37.76808)
+
+    #  Monument Valley Navajo Tribal Park 
+    # bbox = (-110.259297,36.874219,-109.937367,37.130223)
+    # smaller Monument 
+    bbox = (-110.153897,36.959111,-110.046635,37.038107)
+
     # Yosemite
     # bbox = [-119.8017,37.6139,-119.2356,37.9822]
 
@@ -256,7 +270,13 @@ def _():
     # bbox = (-71.876086,44.107368,-71.58563,44.324113)
 
     # Cathedral Ledge - Conway, NH
-    bbox = (-71.196834,44.046417,-71.151728,44.081825)
+    # bbox = (-71.196834,44.046417,-71.151728,44.081825)
+
+    # Bozeman, MT 
+    # bbox = (-111.104555,45.535164,-110.838802,45.853691)
+
+    # Niagra Falls NY
+    # bbox = (-79.098882,43.058803,-79.042462,43.099923)
 
     MAX_WORKERS = 8
     NAIP_DATETIME = "2019-01-01/2022-12-31"
@@ -299,9 +319,13 @@ def _(Table, duckdb, np):
     _con.close()
     print(f"Joined: {len(_joined):,} hexagons")
 
-    _r = np.clip(np.array(_joined["r"]), 0, 255).astype(np.uint8)
-    _g = np.clip(np.array(_joined["g"]), 0, 255).astype(np.uint8)
-    _b = np.clip(np.array(_joined["b"]), 0, 255).astype(np.uint8)
+    def _stretch(arr, lo=2, hi=98):
+        p_lo, p_hi = np.percentile(arr, [lo, hi])
+        return np.clip((arr - p_lo) / (p_hi - p_lo) * 255, 0, 255).astype(np.uint8)
+
+    _r = _stretch(np.array(_joined["r"]))
+    _g = _stretch(np.array(_joined["g"]))
+    _b = _stretch(np.array(_joined["b"]))
     naip_colors = np.column_stack([_r, _g, _b, np.full(len(_r), 255, dtype=np.uint8)])
 
     table = Table.from_arrow(_joined)
@@ -324,7 +348,7 @@ def _(
     table,
 ):
     elevation_scale_input = mo.ui.number(
-        start=0.1, stop=30.0, step=0.1, value=2.5, label="Elevation Scale"
+        start=0.1, stop=30.0, step=0.1, value=1.5, label="Elevation Scale"
     )
     opacity_input = mo.ui.number(
         start=0.0, stop=1.0, step=0.05, value=1.0, label="Opacity"
@@ -339,7 +363,7 @@ def _(
         stroked=False,
         get_elevation=table["elevation"],
         extruded=True,
-        elevation_scale=2.5,
+        elevation_scale=1.5,
         opacity=1.0,
     )
 
