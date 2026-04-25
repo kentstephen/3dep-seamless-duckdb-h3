@@ -30,7 +30,7 @@ def _(mo):
     NAIP aerial imagery (Planetary Computer, native 60cm) + 3DEP 1m elevation
     (USGS seamless-3dep ArcGIS service), aggregated to H3 UBIGINT cells.
 
-    **Run with:** `uv run marimo edit naip_h3_grand_canyon_1m.py --sandbox`
+    **Run with:** `uv run marimo edit naip_usgs_join_h3_1m.py --sandbox`
 
     ---
 
