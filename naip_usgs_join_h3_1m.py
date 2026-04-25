@@ -116,7 +116,7 @@ def _(
         """)
         return con
 
-    def query_naip(bbox, datetime_range="2019-01-01/2022-12-31"):
+    def query_naip(bbox, datetime_range="2012-01-01/2024-12-31"):
         catalog = pystac_client.Client.open(
             "https://planetarycomputer.microsoft.com/api/stac/v1",
             modifier=planetary_computer.sign_inplace,
@@ -130,31 +130,42 @@ def _(
         print(f"Found {len(items)} NAIP items")
         return items
 
-    def deduplicate_naip_items(items):
-        """Keep only the most recent item per geographic quad."""
-        seen = set()
-        unique = []
-        for item in items:
-            key = tuple(round(x, 4) for x in item.bbox)
-            if key not in seen:
-                seen.add(key)
-                unique.append(item)
-        print(f"Deduplicated {len(items)} → {len(unique)} unique quads")
-        return unique
+    def best_naip_year(items):
+        """Find the most recent year with maximum quad coverage.
 
-    def process_naip_item_to_h3(item, bbox, h3_res):
-        """Load one NAIP quad at native 60cm, aggregate RGB to H3. Returns arrow table or None."""
+        Groups items by year, counts unique quads per year, then returns
+        deduplicated items from the most recent year that has full coverage.
+        Handles multiple passes per year — keeps newest item per quad within
+        the chosen year.
+        """
+        from collections import defaultdict
+        year_quads = defaultdict(set)
+        year_items = defaultdict(list)
+        for item in items:
+            year = item.datetime.year
+            key = tuple(round(x, 4) for x in item.bbox)
+            if key not in year_quads[year]:
+                year_quads[year].add(key)
+                year_items[year].append(item)
+
+        if not year_quads:
+            raise RuntimeError("No NAIP items found for bbox")
+
+        max_quads = max(len(q) for q in year_quads.values())
+        for year in sorted(year_quads.keys(), reverse=True):
+            if len(year_quads[year]) >= max_quads:
+                print(f"NAIP year {year}: {len(year_quads[year])} unique quads (full coverage)")
+                return year_items[year]
+
+    def load_naip_item_pixels(item, bbox):
+        """Load one NAIP quad at native 60cm. Returns raw (lat, lng, r, g, b) table or None."""
         try:
             import rioxarray as rxr
-
-            # overview_level=0 = native 60cm
             da = rxr.open_rasterio(item.assets["image"].href, overview_level=0)
             rgb = da.sel(band=[1, 2, 3]).astype(float)
-
             west, south, east, north = bbox
             rgb_clipped = rgb.rio.clip_box(west, south, east, north, crs="EPSG:4326")
             rgb_wgs = rgb_clipped.rio.reproject("EPSG:4326")
-
         except Exception as e:
             print(f"  item {item.id[:30]} failed: {e}")
             return None
@@ -162,7 +173,6 @@ def _(
         r = rgb_wgs.sel(band=1).values
         g = rgb_wgs.sel(band=2).values
         b = rgb_wgs.sel(band=3).values
-
         lons = rgb_wgs.x.values
         lats = rgb_wgs.y.values
         LONS, LATS = np.meshgrid(lons, lats)
@@ -170,58 +180,54 @@ def _(
         if not mask.any():
             return None
 
-        tile_pa = pa.table({
+        return pa.table({
             "lat": pa.array(LATS[mask].flatten(), type=pa.float64()),
             "lng": pa.array(LONS[mask].flatten(), type=pa.float64()),
-            "r": pa.array(r[mask].flatten(), type=pa.float64()),
-            "g": pa.array(g[mask].flatten(), type=pa.float64()),
-            "b": pa.array(b[mask].flatten(), type=pa.float64()),
+            "r": pa.array(r[mask].flatten(), type=pa.float32()),
+            "g": pa.array(g[mask].flatten(), type=pa.float32()),
+            "b": pa.array(b[mask].flatten(), type=pa.float32()),
         })
 
-        con = get_con()
-        return con.sql(f"""
-            SELECT h3_latlng_to_cell(lat, lng, {h3_res}) AS hex,
-                AVG(r) AS r, AVG(g) AS g, AVG(b) AS b
-            FROM tile_pa WHERE r > 0 OR g > 0 OR b > 0
-            GROUP BY 1
-        """).fetch_arrow_table()
-
-    def process_all_naip_items(items, bbox, h3_res, max_workers=4):
+    def load_all_naip_pixels(items, bbox, max_workers=4):
+        """Load all NAIP quads in parallel. Returns combined raw pixel table."""
         batches = []
         empty_items = []
         completed, total = 0, len(items)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(process_naip_item_to_h3, item, bbox, h3_res): item
-                for item in items
-            }
+            futures = {pool.submit(load_naip_item_pixels, item, bbox): item for item in items}
             for future in as_completed(futures):
                 item = futures[future]
                 result = future.result()
-                if result is not None and len(result) > 0:
+                if result is not None:
                     batches.append(result)
                 else:
                     empty_items.append(item.id)
                 completed += 1
-                if completed % 10 == 0 or completed == total:
-                    print(f"  NAIP: {completed}/{total} items")
+                print(f"  NAIP: {completed}/{total} items")
         if not batches:
-            raise RuntimeError("No NAIP items returned data — mosaic is empty for this bbox/datetime")
+            raise RuntimeError("No NAIP items returned data — mosaic is empty for this bbox")
         if empty_items:
             print(f"WARNING: {len(empty_items)}/{total} quads had no pixel data:")
             for _id in empty_items:
                 print(f"  {_id}")
-        combined = pa.concat_tables(batches)
-        con = duckdb.connect()
-        naip_cache = con.sql("""
-            SELECT hex, AVG(r) AS r, AVG(g) AS g, AVG(b) AS b
-            FROM combined GROUP BY 1
+        naip_pixels = pa.concat_tables(batches)
+        print(f"NAIP pixels: {len(naip_pixels):,} rows")
+        return naip_pixels
+
+    def aggregate_naip_to_h3(naip_pixels, h3_res):
+        """Aggregate raw pixel table to H3 cells. Fast — no I/O."""
+        con = get_con()
+        naip_cache = con.sql(f"""
+            SELECT h3_latlng_to_cell(lat, lng, {h3_res}) AS hex,
+                AVG(r) AS r, AVG(g) AS g, AVG(b) AS b
+            FROM naip_pixels WHERE r > 0 OR g > 0 OR b > 0
+            GROUP BY 1
         """).fetch_arrow_table()
         con.close()
-        print(f"NAIP cache: {len(naip_cache):,} hexagons")
+        print(f"NAIP cache: {len(naip_cache):,} hexagons at res {h3_res}")
         return naip_cache
 
-    return deduplicate_naip_items, process_all_naip_items, query_naip
+    return aggregate_naip_to_h3, best_naip_year, load_all_naip_pixels, query_naip
 
 
 @app.cell
@@ -279,38 +285,40 @@ def _():
     # bbox = (-79.098882,43.058803,-79.042462,43.099923)
 
     MAX_WORKERS = 8
-    NAIP_DATETIME = "2019-01-01/2022-12-31"
     H3_RES = 14
-    return H3_RES, MAX_WORKERS, NAIP_DATETIME, bbox
+    return H3_RES, MAX_WORKERS, bbox
 
 
 @app.cell
-def _(
-    H3_RES,
-    MAX_WORKERS,
-    NAIP_DATETIME,
-    bbox,
-    deduplicate_naip_items,
-    process_all_naip_items,
-    query_naip,
-):
-    # SLOW — runs once per bbox/H3_RES change.
-    _items = deduplicate_naip_items(query_naip(bbox, NAIP_DATETIME))
-    naip_cache = process_all_naip_items(_items, bbox, H3_RES, max_workers=MAX_WORKERS)
-    return
+def _(MAX_WORKERS, bbox, best_naip_year, load_all_naip_pixels, query_naip):
+    # SLOW — runs once per bbox change. Picks the most recent year with full quad coverage.
+    naip_pixels = load_all_naip_pixels(best_naip_year(query_naip(bbox)), bbox, max_workers=MAX_WORKERS)
+    return (naip_pixels,)
 
 
 @app.cell
-def _(H3_RES, aggregate_to_h3, bbox, load_dem):
-    # SLOW — runs once per bbox/H3_RES change.
-    _dem = load_dem(bbox, res=1)
-    elev_cache = aggregate_to_h3(_dem, H3_RES)
-    del _dem
-    return
+def _(H3_RES, aggregate_naip_to_h3, naip_pixels):
+    # FAST — re-runs when H3_RES changes.
+    naip_cache = aggregate_naip_to_h3(naip_pixels, H3_RES)
+    return (naip_cache,)
 
 
 @app.cell
-def _(Table, duckdb, np):
+def _(bbox, load_dem):
+    # SLOW — runs once per bbox change.
+    dem = load_dem(bbox, res=1)
+    return (dem,)
+
+
+@app.cell
+def _(H3_RES, aggregate_to_h3, dem):
+    # FAST — re-runs when H3_RES changes.
+    elev_cache = aggregate_to_h3(dem, H3_RES)
+    return (elev_cache,)
+
+
+@app.cell
+def _(Table, duckdb, elev_cache, naip_cache, np):
     _con = duckdb.connect()
     _joined = _con.sql("""
         SELECT n.hex, n.r, n.g, n.b, e.metric AS elevation
