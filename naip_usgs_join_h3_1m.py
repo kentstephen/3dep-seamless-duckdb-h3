@@ -142,15 +142,19 @@ def _(
         print(f"Deduplicated {len(items)} → {len(unique)} unique quads")
         return unique
 
-    def load_naip_item_pixels(item, bbox):
-        """Load one NAIP quad at native 60cm. Returns raw (lat, lng, r, g, b) table or None."""
+    def process_naip_item_to_h3(item, bbox, h3_res):
+        """Load one NAIP quad at native 60cm, aggregate RGB to H3. Returns arrow table or None."""
         try:
             import rioxarray as rxr
+
+            # overview_level=0 = native 60cm
             da = rxr.open_rasterio(item.assets["image"].href, overview_level=0)
             rgb = da.sel(band=[1, 2, 3]).astype(float)
+
             west, south, east, north = bbox
             rgb_clipped = rgb.rio.clip_box(west, south, east, north, crs="EPSG:4326")
             rgb_wgs = rgb_clipped.rio.reproject("EPSG:4326")
+
         except Exception as e:
             print(f"  item {item.id[:30]} failed: {e}")
             return None
@@ -158,6 +162,7 @@ def _(
         r = rgb_wgs.sel(band=1).values
         g = rgb_wgs.sel(band=2).values
         b = rgb_wgs.sel(band=3).values
+
         lons = rgb_wgs.x.values
         lats = rgb_wgs.y.values
         LONS, LATS = np.meshgrid(lons, lats)
@@ -165,54 +170,58 @@ def _(
         if not mask.any():
             return None
 
-        return pa.table({
+        tile_pa = pa.table({
             "lat": pa.array(LATS[mask].flatten(), type=pa.float64()),
             "lng": pa.array(LONS[mask].flatten(), type=pa.float64()),
-            "r": pa.array(r[mask].flatten(), type=pa.float32()),
-            "g": pa.array(g[mask].flatten(), type=pa.float32()),
-            "b": pa.array(b[mask].flatten(), type=pa.float32()),
+            "r": pa.array(r[mask].flatten(), type=pa.float64()),
+            "g": pa.array(g[mask].flatten(), type=pa.float64()),
+            "b": pa.array(b[mask].flatten(), type=pa.float64()),
         })
 
-    def load_all_naip_pixels(items, bbox, max_workers=4):
-        """Load all NAIP quads in parallel. Returns combined raw pixel table."""
+        con = get_con()
+        return con.sql(f"""
+            SELECT h3_latlng_to_cell(lat, lng, {h3_res}) AS hex,
+                AVG(r) AS r, AVG(g) AS g, AVG(b) AS b
+            FROM tile_pa WHERE r > 0 OR g > 0 OR b > 0
+            GROUP BY 1
+        """).fetch_arrow_table()
+
+    def process_all_naip_items(items, bbox, h3_res, max_workers=4):
         batches = []
         empty_items = []
         completed, total = 0, len(items)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(load_naip_item_pixels, item, bbox): item for item in items}
+            futures = {
+                pool.submit(process_naip_item_to_h3, item, bbox, h3_res): item
+                for item in items
+            }
             for future in as_completed(futures):
                 item = futures[future]
                 result = future.result()
-                if result is not None:
+                if result is not None and len(result) > 0:
                     batches.append(result)
                 else:
                     empty_items.append(item.id)
                 completed += 1
-                print(f"  NAIP: {completed}/{total} items")
+                if completed % 10 == 0 or completed == total:
+                    print(f"  NAIP: {completed}/{total} items")
         if not batches:
             raise RuntimeError("No NAIP items returned data — mosaic is empty for this bbox/datetime")
         if empty_items:
             print(f"WARNING: {len(empty_items)}/{total} quads had no pixel data:")
             for _id in empty_items:
                 print(f"  {_id}")
-        naip_pixels = pa.concat_tables(batches)
-        print(f"NAIP pixels: {len(naip_pixels):,} rows")
-        return naip_pixels
-
-    def aggregate_naip_to_h3(naip_pixels, h3_res):
-        """Aggregate raw pixel table to H3 cells. Fast — no I/O."""
-        con = get_con()
-        naip_cache = con.sql(f"""
-            SELECT h3_latlng_to_cell(lat, lng, {h3_res}) AS hex,
-                AVG(r) AS r, AVG(g) AS g, AVG(b) AS b
-            FROM naip_pixels WHERE r > 0 OR g > 0 OR b > 0
-            GROUP BY 1
+        combined = pa.concat_tables(batches)
+        con = duckdb.connect()
+        naip_cache = con.sql("""
+            SELECT hex, AVG(r) AS r, AVG(g) AS g, AVG(b) AS b
+            FROM combined GROUP BY 1
         """).fetch_arrow_table()
         con.close()
-        print(f"NAIP cache: {len(naip_cache):,} hexagons at res {h3_res}")
+        print(f"NAIP cache: {len(naip_cache):,} hexagons")
         return naip_cache
 
-    return aggregate_naip_to_h3, deduplicate_naip_items, load_all_naip_pixels, query_naip
+    return deduplicate_naip_items, process_all_naip_items, query_naip
 
 
 @app.cell
@@ -276,36 +285,32 @@ def _():
 
 
 @app.cell
-def _(MAX_WORKERS, NAIP_DATETIME, bbox, deduplicate_naip_items, load_all_naip_pixels, query_naip):
-    # SLOW — runs once per bbox/NAIP_DATETIME change. No H3_RES dependency.
+def _(
+    H3_RES,
+    MAX_WORKERS,
+    NAIP_DATETIME,
+    bbox,
+    deduplicate_naip_items,
+    process_all_naip_items,
+    query_naip,
+):
+    # SLOW — runs once per bbox/H3_RES change.
     _items = deduplicate_naip_items(query_naip(bbox, NAIP_DATETIME))
-    naip_pixels = load_all_naip_pixels(_items, bbox, max_workers=MAX_WORKERS)
-    return (naip_pixels,)
+    naip_cache = process_all_naip_items(_items, bbox, H3_RES, max_workers=MAX_WORKERS)
+    return
 
 
 @app.cell
-def _(H3_RES, aggregate_naip_to_h3, naip_pixels):
-    # FAST — re-runs when H3_RES changes.
-    naip_cache = aggregate_naip_to_h3(naip_pixels, H3_RES)
-    return (naip_cache,)
+def _(H3_RES, aggregate_to_h3, bbox, load_dem):
+    # SLOW — runs once per bbox/H3_RES change.
+    _dem = load_dem(bbox, res=1)
+    elev_cache = aggregate_to_h3(_dem, H3_RES)
+    del _dem
+    return
 
 
 @app.cell
-def _(bbox, load_dem):
-    # SLOW — runs once per bbox change. No H3_RES dependency.
-    dem = load_dem(bbox, res=1)
-    return (dem,)
-
-
-@app.cell
-def _(H3_RES, aggregate_to_h3, dem):
-    # FAST — re-runs when H3_RES changes.
-    elev_cache = aggregate_to_h3(dem, H3_RES)
-    return (elev_cache,)
-
-
-@app.cell
-def _(Table, duckdb, elev_cache, naip_cache, np):
+def _(Table, duckdb, np):
     _con = duckdb.connect()
     _joined = _con.sql("""
         SELECT n.hex, n.r, n.g, n.b, e.metric AS elevation
@@ -314,13 +319,9 @@ def _(Table, duckdb, elev_cache, naip_cache, np):
     _con.close()
     print(f"Joined: {len(_joined):,} hexagons")
 
-    def _stretch(arr, lo=2, hi=98):
-        p_lo, p_hi = np.percentile(arr, [lo, hi])
-        return np.clip((arr - p_lo) / (p_hi - p_lo) * 255, 0, 255).astype(np.uint8)
-
-    _r = _stretch(np.array(_joined["r"]))
-    _g = _stretch(np.array(_joined["g"]))
-    _b = _stretch(np.array(_joined["b"]))
+    _r = np.clip(np.array(_joined["r"]), 0, 255).astype(np.uint8)
+    _g = np.clip(np.array(_joined["g"]), 0, 255).astype(np.uint8)
+    _b = np.clip(np.array(_joined["b"]), 0, 255).astype(np.uint8)
     naip_colors = np.column_stack([_r, _g, _b, np.full(len(_r), 255, dtype=np.uint8)])
 
     table = Table.from_arrow(_joined)
@@ -343,7 +344,7 @@ def _(
     table,
 ):
     elevation_scale_input = mo.ui.number(
-        start=0.1, stop=30.0, step=0.1, value=1.5, label="Elevation Scale"
+        start=0.1, stop=30.0, step=0.1, value=1.1, label="Elevation Scale"
     )
     opacity_input = mo.ui.number(
         start=0.0, stop=1.0, step=0.05, value=1.0, label="Opacity"
