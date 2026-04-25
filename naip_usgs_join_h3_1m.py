@@ -227,7 +227,12 @@ def _(
         print(f"NAIP cache: {len(naip_cache):,} hexagons at res {h3_res}")
         return naip_cache
 
-    return aggregate_naip_to_h3, best_naip_year, load_all_naip_pixels, query_naip
+    return (
+        aggregate_naip_to_h3,
+        best_naip_year,
+        load_all_naip_pixels,
+        query_naip,
+    )
 
 
 @app.cell
@@ -241,7 +246,13 @@ def _(Path, Transformer, s3dep):
         bbox_3857 = (west, south, east, north)
         tiff_files = s3dep.get_map("DEM", bbox, save_dir, res=res)
         dem = s3dep.tiffs_to_da(tiff_files, bbox_3857, crs=3857)
+        t_inv = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+        b = dem.rio.bounds()
+        dw, ds = t_inv.transform(b[0], b[1])
+        de, dn = t_inv.transform(b[2], b[3])
         print(f"DEM shape: {dem.shape}, CRS: {dem.rio.crs}")
+        print(f"  query bbox : {bbox}")
+        print(f"  DEM bounds : ({dw:.6f}, {ds:.6f}, {de:.6f}, {dn:.6f})")
         return dem
 
     return (load_dem,)
@@ -267,7 +278,9 @@ def _():
     #  Monument Valley Navajo Tribal Park 
     # bbox = (-110.259297,36.874219,-109.937367,37.130223)
     # smaller Monument 
-    bbox = (-110.153897,36.959111,-110.046635,37.038107)
+    # bbox = (-110.153897,36.959111,-110.046635,37.038107)
+    # even smaller monument
+    bbox = (-110.119667,36.965153,-110.054825,37.008449)
 
     # Yosemite
     # bbox = [-119.8017,37.6139,-119.2356,37.9822]
@@ -319,6 +332,8 @@ def _(H3_RES, aggregate_to_h3, dem):
 
 @app.cell
 def _(Table, duckdb, elev_cache, naip_cache, np):
+    print(f"naip_cache: {len(naip_cache):,} hexagons")
+    print(f"elev_cache: {len(elev_cache):,} hexagons")
     _con = duckdb.connect()
     _joined = _con.sql("""
         SELECT n.hex, n.r, n.g, n.b, e.metric AS elevation
