@@ -116,7 +116,7 @@ def _(
         """)
         return con
 
-    def query_naip(bbox, datetime_range="2012-01-01/2024-12-31"):
+    def query_naip(bbox, datetime_range="2003-01-01/2025-12-31"):
         catalog = pystac_client.Client.open(
             "https://planetarycomputer.microsoft.com/api/stac/v1",
             modifier=planetary_computer.sign_inplace,
@@ -130,32 +130,40 @@ def _(
         print(f"Found {len(items)} NAIP items")
         return items
 
-    def best_naip_year(items):
-        """Find the most recent year with maximum quad coverage.
+    def best_naip_year(items, bbox=None):
+        """Pick the most recent year where all quads were captured on a single date.
 
-        Groups items by year, counts unique quads per year, then returns
-        deduplicated items from the most recent year that has full coverage.
-        Handles multiple passes per year — keeps newest item per quad within
-        the chosen year.
+        Single-date years have no color seams between tiles. Falls back to the
+        most recent year with maximum quad coverage if no single-date year exists.
         """
         from collections import defaultdict
-        year_quads = defaultdict(set)
-        year_items = defaultdict(list)
+
+        year_quads = defaultdict(dict)
         for item in items:
             year = item.datetime.year
             key = tuple(round(x, 4) for x in item.bbox)
             if key not in year_quads[year]:
-                year_quads[year].add(key)
-                year_items[year].append(item)
+                year_quads[year][key] = item
 
         if not year_quads:
             raise RuntimeError("No NAIP items found for bbox")
 
+        # prefer most recent year where every quad shares one capture date
+        for year in sorted(year_quads.keys(), reverse=True):
+            quads = list(year_quads[year].values())
+            dates = {it.datetime.strftime("%Y-%m-%d") for it in quads}
+            if len(dates) == 1:
+                print(f"NAIP {year}: {len(quads)} quads, all captured {next(iter(dates))} ✓")
+                return quads
+
+        # fallback: most recent year with most quads
         max_quads = max(len(q) for q in year_quads.values())
         for year in sorted(year_quads.keys(), reverse=True):
             if len(year_quads[year]) >= max_quads:
-                print(f"NAIP year {year}: {len(year_quads[year])} unique quads (full coverage)")
-                return year_items[year]
+                quads = list(year_quads[year].values())
+                dates = sorted({it.datetime.strftime("%Y-%m-%d") for it in quads})
+                print(f"NAIP {year}: {len(quads)} quads, mixed dates {dates} ⚠")
+                return quads
 
     def load_naip_item_pixels(item, bbox):
         """Load one NAIP quad at native 60cm. Returns raw (lat, lng, r, g, b) table or None."""

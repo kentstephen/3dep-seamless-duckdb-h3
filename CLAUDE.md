@@ -71,6 +71,8 @@ This prevents the expensive colormap recomputation when you just want to tweak e
 - **`river_rem_s3dep.py`** - River REM notebook using `seamless-3dep` (USGS National Map) instead of Planetary Computer STAC. Full 10m CONUS coverage without gaps. Default bbox: Willamette River, OR. Branch: `feature/river-rem-s3dep`.
 - **`river_rem_h3.py`** - Original River REM notebook using Planetary Computer STAC + odc-stac. Branch: `feature/river-rem-hyriver`.
 - **`elevation_1m.py`** - 1m DEM → H3 hexagons via `seamless-3dep` `get_map(res=1)`. Branch: `feature/river-rem-1m`.
+- **`naip_usgs_join_h3_1m.py`** - NAIP true color + 3DEP 1m elevation → H3 hexagons. NAIP at native 60cm, joined with 1m DEM via H3 index. Branch: `feature/naip-color-normalize`. Key functions: `query_naip`, `best_naip_year`, `load_all_naip_pixels`, `aggregate_naip_to_h3`.
+- **`naip_browse.py`** - NAIP discovery tool. Queries full NAIP history (2003–present) for a bbox, groups by year, shows capture dates per quad. Use to find years where all quads share a single date (no color seams). Not a pipeline notebook — diagnostic only.
 - **`elevation_h3_clean_with_fused_census.py`** - Elevation + Fused census H3 join. Two layers, different colormaps. Queries Source Coop Parquet via DuckDB.
 
 ## Key Reference Files (`refrences/`)
@@ -80,6 +82,7 @@ This prevents the expensive colormap recomputation when you just want to tweak e
 - **`new_schema_for_ept_duckdb_h3.ipynb`** - Shows mercantile tile-based parallel processing with DuckDB, two-stage H3 aggregation, and multiple lonboard layers.
 - **`landsat_vegetation_change_h3.ipynb`** - Shows memory-efficient streaming (process per-year, aggregate immediately to H3), DuckDB persistence, and linked map views.
 - **`overture_core.py`** - Shared Overture Maps data functions (from lidar-h3-notebooks). GeoParquet loading via `obstore` + `geoarrow-rust`, geometry type splitting, lonboard layer building. Reference for Overture building/infrastructure joins.
+- **`naip_planetary_computer.ipynb`** - Official Planetary Computer NAIP example. Shows `area_of_overlap` pattern for selecting the best single item, `rendered_preview` for quick display, and `rioxarray` for raw COG access.
 
 
 ## Project Goals & TODOs
